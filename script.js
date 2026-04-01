@@ -141,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const LANGUAGE_KEY = 'language';
 	const LANGUAGE_USER_SELECTED_KEY = 'languageUserSelected';
 	const SUPPORTED_LANGUAGES = ['ru', 'en'];
+	let platformLanguage = null;
 	let currentLanguage = 'ru';;
 
 	const SCROLLABLE_UI_SELECTORS = [
@@ -275,6 +276,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	function isLanguageManuallySelected() {
 		return getStorageItem(LANGUAGE_USER_SELECTED_KEY) === '1';
+	}
+
+	function getFallbackLanguage() {
+		const browserLanguage = normalizeLanguage(window.navigator?.language || '');
+		return browserLanguage === 'en' ? 'en' : 'ru';
 	}
 
 	function t(key, params = {}) {
@@ -1349,9 +1355,24 @@ document.addEventListener('DOMContentLoaded', () => {
 		});
 	}
 
-	const savedLanguage = normalizeLanguage(getStorageItem(LANGUAGE_KEY));
-	const shouldUseManualLanguage = isLanguageManuallySelected();
-	applyLanguage(shouldUseManualLanguage ? savedLanguage : 'ru', { save: false });
+	async function applyStartupLanguage() {
+		const savedLanguage = normalizeLanguage(getStorageItem(LANGUAGE_KEY));
+		const shouldUseManualLanguage = isLanguageManuallySelected();
+		const appRoot = document.getElementById('app-root');
+
+		try {
+			const sdkInstance = await initSDK();
+			const sdkLanguage = normalizeLanguage(platformLanguage || sdkInstance?.environment?.i18n?.lang);
+			const startupLanguage = shouldUseManualLanguage
+				? savedLanguage
+				: (sdkInstance ? sdkLanguage : getFallbackLanguage());
+			applyLanguage(startupLanguage, { save: !shouldUseManualLanguage, userSelected: false });
+		} finally {
+			appRoot?.classList.remove('app-locale-pending');
+		}
+	}
+
+	applyStartupLanguage();
 
 	// 1) При загрузке — вспомнить тему или поставить тёмную по умолчанию
 	const savedTheme = getStorageItem(THEME_KEY) || DEFAULT_THEME;
@@ -1748,9 +1769,7 @@ function showRewardedAd(rewardType) {
 	setAppHooks({
 		onPlatformLanguage: (lang) => {
 			if (!lang) return;
-			if (isLanguageManuallySelected()) return;
-			const normalized = normalizeLanguage(lang);
-			applyLanguage(normalized, { save: true, userSelected: false });
+			platformLanguage = normalizeLanguage(lang);
 		},
 		onExternalPause: pauseGameplayContext,
 		onExternalResume: resumeGameplayContext,
@@ -3338,8 +3357,6 @@ if (boostsBtn) {
 	});
 	notifyLoadingReady();
 	initTvControls();
-	initSDK();
-
 	// Сохранение при перезагрузке/закрытии и при уходе со страницы
 	window.addEventListener('beforeunload', saveGame);
 	document.addEventListener('visibilitychange', () => {
