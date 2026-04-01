@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+	<title>Robo Clicker</title>
+	<link rel="stylesheet" href="style.css" /> </head>
+
+<body id="app-root">
+	<!-- Об игре-->
+	<section id="about-modal" class="menu about-modal hidden">
+		<div class="menu-frame">
+			<div class="menu-card about-card">
+				<header class="">
+					<div class="menu-title about-title">
+						<p class="game-title"><span data-lang="gamename">Robo Clicker</span><span data-lang="about-title"> — это космическое приключение!</span></p>
+						<p class="game-description" data-lang="inginer">Ты — главный инженер секретной лаборатории будущего!</p>
+					</div>
+				</header>
+				<main class="about-wait">
+					<div class="wait">
+							<p data-lang="about-awaits">Что тебя ждёт:</p>
+						<ul class="about-list">
+							<li data-lang="klik">✨Кликай: Зарабатывай золото своими руками!</li>
+							<li data-lang="Upgrade">⚙️Прокачивай: Увеличивай силу клика и покупай автоматических роботов.</li>
+							<li data-lang="Skin">🎭Скины: Открывай новых уникальных героев за достижения.</li>
+							<li data-lang="Level">🏆Уровни: Докажи, что ты лучший, повышая свой уровень инженера.</li>
+						</ul>
+					</div>
+				</main>
+				<aside class="about-footer">
+					<div class="about-go">
+						<p data-lang="young">Создано специально для юных изобретателей!</p>
+						<button id="about-go-btn" class="about-go-btn" type="button" data-lang="Go">ПОЕХАЛИ!</button>
+					</div>
+				</aside>
+				<button id="close-about" class="close-btn">✕</button>
+			</div>
+		</div>
+	</section>
+	<!-- Настройки -->
+	<section id="settings" class="menu settings-modal hidden">
+		<div class="menu-frame">
+			<div class="settings-card">
+				<header class="menu-settings">
+					<p data-lang="settings">Настройки</p>
+				</header>
+				<main class="settings-frame">
+					<div class="card-frame">
+						<ul class="settings-list">
+							<li data-lang="language">🌍 Язык</li>
+							<li>
+								<select id="language-select">
+									<option class="opt-btn active" value="ru">RU</option>
+									<option class="opt-btn" value="en">EN</option>
+								</select>
+							</li>
+							<li data-lang="sound">🔊 Звук</li>
+							<li> <span>🔇</span>
+								<input id="volume-slider" type="range" min="0" max="100" value="100" step="1" aria-label="Громкость звука"> <span>🔊</span> </li>
+							<li data-lang="brightness">☀️ Яркость</li>
+							<li> <span>🌑</span>
+								<input id="brightness-range" type="range" min="20" max="80" value="80" step="1"> <span>🌕</span> </li>
+							<li data-lang="theme">🌗 Тема</li>
+							<li>
+									<select class="theme-select">
+										<option class="theme-btn active" value="dark" data-theme="dark" data-lang="theme-dark">Темная</option>
+										<option class="theme-btn" value="light" data-theme="light" data-lang="theme-light">Светлая</option>
+										<option class="theme-btn" value="auto" data-theme="auto" data-lang="theme-auto">Авто</option>
+								</select>
+							</li>
+						</ul>
+					</div>
+				</main>
+				<aside class="settings-footer">
+					<div class="settings-restart">
+						<button id="reset-progress-btn" class="settings-restart-btn" type="button" aria-label="Сбросить весь прогресс"> <span class="settings-restart-progress" aria-hidden="true"></span> <span class="settings-restart-label" data-lang="restart">Сбросить весь прогресс</span> </button>
+					</div>
+				</aside>
+				<button id="close-settings" class="close-btn">✕</button>
+			</div>
+		</div>
+	</section>
+	<!-- Главное меню-->
+	<section id="menu" class="menu">
+		<div class="menu-card">
+			<header>
+				<h1 class="menu-title main-title" data-lang="gamename">Robo Clicker</h1>
+				<p class="menu-sub" data-lang="welcome">Кликай, улучшай и собирай скины!</p>
+			</header>
+				<main class="menu-content">
+					<button id="start-btn" class="menu-btn primary-btn" data-lang="start-btn">Начать игру</button>
+				</main>
+			<nav class="menu-extra">
+					<button id="about-btn" class="menu-btn secondary-btn" data-lang="about-btn">Об игре</button>
+					<button id="settings-btn" class="menu-btn secondary-btn" data-lang="settings-btn">Настройки</button>
+			</nav>
+		</div>
+	</section>
+	<!-- Главный экран-->
+	<section id="game" class="">
+		<header class="game-topbar">
+			<div class="game-stats-row" aria-label="Игровая статистика">
+				<div class="stat-badge stat-badge--compact"> <span class="stat-badge__label" id="score-label" data-lang="gold">Золото</span> <span class="stat-badge__value"><span id="score">0</span> 💰</span>
+				</div>
+				<div class="stat-badge stat-badge--compact"> <span class="stat-badge__label" id="power-label" data-lang="power-label">Сила клика</span> <span class="stat-badge__value"><span id="click-power-val">1</span> ⚡</span>
+				</div>
+			</div>
+		</header>
+		<div class="level-row" aria-label="Уровень игрока">
+			<div id="level-bar" class="level-bar" role="progressbar" aria-label="Прогресс уровня" aria-valuemin="0" aria-valuenow="0" aria-valuemax="150">
+				<div id="level-fill" class="level-fill"></div>
+				<div id="level-text" class="level-text" data-lang="level" data-lang-template="LVL {n}"> LVL 0 </div>
+			</div>
+		</div>
+		<div class="shop-panel">
+			<h2 class="shop-panel__title" data-lang="shop-title">МАГАЗИН</h2>
+			<section class="game-upgrades" aria-label="Улучшения">
+				<button id="btn-upgrade-click" class="upgrade-btn upgrade-btn--click" type="button"> <span class="upgrade-btn__icon" aria-hidden="true">⚡</span> <span class="upgrade-btn__text"> 
+						<span class="upgrade-btn__title" data-lang="upgrade-click">Улучшить клик</span> </span> <span class="price" aria-label="Цена"></span> </button>
+				<button id="btn-auto-bot" class="upgrade-btn upgrade-btn--auto" type="button"> <span class="upgrade-btn__icon" aria-hidden="true">🤖</span> <span class="upgrade-btn__text"> 
+						<span class="upgrade-btn__title" data-lang="robot-btn">Робот</span> <span id="robot-info" class="upgrade-btn__subtitle" data-lang="robot-info-default">+1/сек • 0 куплено</span> </span> <span class="price" aria-label="Цена"></span> </button>
+			</section>
+		</div>
+		<div class="feature-panel" aria-label="Игровые разделы">
+			<button id="btn-skins" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">👕</span> <span class="feature-btn__text" data-lang="skins-btn">Скины</span> </button>
+			<button id="btn-boosts" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">🚀</span> <span class="feature-btn__text" data-lang="boosts-btn">Бусты</span> </button>
+			<button id="btn-achievements" class="feature-btn locked" type="button"> <span class="feature-btn__icon" aria-hidden="true">🏆</span> <span class="feature-btn__text" data-lang="achievements-btn">Достижения</span> </button>
+			<button id="btn-stats" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">📊</span> <span class="feature-btn__text" data-lang="stats-btn">Статистика</span> </button>
+		</div>
+		<main class="game-arena">
+			<div id="click-object">🤖</div>
+		</main>
+		<aside class="game-shop">
+			<button id="back-menu-btn" class="exit-btn" data-lang="back-menu-btn">В меню</button>
+		</aside>
+	</section>
+	<!-- Скины -->
+	<section id="skins-modal" class="menu skins-modal hidden">
+		<div class="menu-frame">
+			<div class="skins-card">
+				<header class="skins-header">
+					<h2 class="menu-title skins-title" data-lang="skins-title">СКИНЫ</h2> </header>
+				<main class="skins-content">
+					<div id="skins-grid" class="skins-grid" aria-label="Список скинов"></div>
+				</main>
+				<div class="ad-safe-zone">
+					<button id="reward-random-skin-btn" class="menu-btn secondary-btn" type="button">Посмотреть рекламу и открыть случайный скин</button>
+				</div>
+				<button id="close-skins" class="close-btn" type="button" aria-label="Закрыть окно скинов">✕</button>
+			</div>
+		</div>
+	</section>
+	<!-- Бусты -->
+	<section id="boosts-modal" class="menu boosts-modal hidden">
+		<div class="menu-frame">
+			<div class="boosts-card">
+				<header class="boosts-header">
+					<h2 class="menu-title boosts-title" data-lang="boosts-title">БУСТЫ</h2> </header>
+				<nav id="boosts-tabs" class="boosts-tabs" aria-label="Категории бустов"></nav>
+				<section class="boosts-active" aria-label="Активные бусты">
+					<h3 data-lang="active-boosts">Активные бусты</h3>
+					<div id="boosts-active-list"></div>
+				</section>
+				<main class="boosts-grid">
+					<div id="boosts-grid" aria-label="Список бустов"></div>
+				</main>
+				<div class="ad-safe-zone">
+					<button id="reward-free-boost-btn" class="menu-btn secondary-btn" type="button">Посмотреть рекламу и получить бесплатный буст</button>
+				</div>
+				<button id="close-boosts" class="close-btn" type="button" aria-label="Закрыть окно бустов">✕</button>
+			</div>
+		</div>
+	</section>
+	<!-- Достижения -->
+	<section id="achievements-modal" class="menu achievements-modal hidden">
+		<div class="menu-frame">
+			<div class="achievements-card">
+				<header class="achievements-header">
+					<h2 class="menu-title achievements-title" data-lang="achievements-title">ДОСТИЖЕНИЯ</h2>
+					<p id="achievements-summary" class="achievements-summary">Завершено серий: 0 • Прогресс 0%</p>
+					<div class="achievements-overall-progress" aria-label="Общий прогресс достижений">
+						<div id="achievements-overall-fill" class="achievements-overall-progress__fill"></div>
+					</div>
+				</header>
+				<main class="achievements-content">
+					<div id="achievements-list" class="achievements-list" aria-label="Список достижений"></div>
+				</main>
+				<button id="close-achievements" class="close-btn" type="button" aria-label="Закрыть окно достижений">✕</button>
+			</div>
+		</div>
+	</section>
+	<!-- Статистика -->
+	<section id="stats-modal" class="menu stats-modal hidden">
+		<div class="menu-frame">
+			<div class="stats-card">
+				<header class="stats-header">
+					<h2 class="menu-title stats-title" data-lang="stats-title">СТАТИСТИКА</h2> </header>
+				<main class="stats-content" aria-label="Игровая статистика">
+					<section class="stats-section" aria-labelledby="stats-basic-title">
+						<h3 id="stats-basic-title" class="stats-section__title">Основное</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Монеты сейчас</span><span id="stats-coins-current" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Всего заработано монет</span><span id="stats-total-coins-earned" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Всего кликов</span><span id="stats-total-clicks" class="stats-item__value">0</span></div>
+						</div>
+					</section>
+					<section class="stats-section" aria-labelledby="stats-upgrade-title">
+						<h3 id="stats-upgrade-title" class="stats-section__title">Прокачка</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Базовая сила клика</span><span id="stats-click-power-base" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Эффективная сила клика</span><span id="stats-click-power-effective" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Текущий уровень</span><span id="stats-level" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Прогресс уровня</span><span id="stats-level-progress" class="stats-item__value">0 / 0</span></div>
+							<div class="stats-item"><span class="stats-item__label">До следующего уровня</span><span id="stats-level-remaining" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Куплено улучшений клика</span><span id="stats-click-upgrades" class="stats-item__value">0</span></div>
+						</div>
+					</section>
+					<section class="stats-section" aria-labelledby="stats-robots-title">
+						<h3 id="stats-robots-title" class="stats-section__title">Роботы</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Роботов куплено</span><span id="stats-robots-count" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Базовый доход роботов в секунду</span><span id="stats-robots-income-base" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Эффективный доход роботов в секунду</span><span id="stats-robots-income-effective" class="stats-item__value">0</span></div>
+						</div>
+					</section>
+					<section class="stats-section" aria-labelledby="stats-skins-title">
+						<h3 id="stats-skins-title" class="stats-section__title">Скины</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Куплено скинов</span><span id="stats-skins-bought" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Открыто скинов</span><span id="stats-skins-owned" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Выбранный скин</span><span id="stats-skins-selected" class="stats-item__value">—</span></div>
+						</div>
+					</section>
+					<section class="stats-section" aria-labelledby="stats-boosts-title">
+						<h3 id="stats-boosts-title" class="stats-section__title">Бусты</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Улучшено бустов</span><span id="stats-boosts-upgraded" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Всего использовано бустов</span><span id="stats-boosts-used-total" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Разных типов использовано</span><span id="stats-boosts-types-used" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Активно сейчас</span><span id="stats-boosts-active" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Лучшее комбо бустов</span><span id="stats-boosts-best-combo" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Суммарное время бустов (сек)</span><span id="stats-boosts-total-time" class="stats-item__value">0</span></div>
+						</div>
+					</section>
+					<section class="stats-section" aria-labelledby="stats-achievements-title">
+						<h3 id="stats-achievements-title" class="stats-section__title">Достижения</h3>
+						<div class="stats-grid">
+							<div class="stats-item"><span class="stats-item__label">Открыто достижений</span><span id="stats-achievements-unlocked" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Получено наград</span><span id="stats-achievements-claimed" class="stats-item__value">0</span></div>
+							<div class="stats-item"><span class="stats-item__label">Система достижений</span><span id="stats-achievements-system" class="stats-item__value">Нет</span></div>
+						</div>
+					</section>
+				</main>
+				<button id="close-stats" class="close-btn" type="button" aria-label="Закрыть окно статистики">✕</button>
+			</div>
+		</div>
+	</section>
+	<script src="script.js"></script>
+	<script async src="/sdk.js" onload="window.initSDK && window.initSDK()"></script>
+</body>
+
+</html>
