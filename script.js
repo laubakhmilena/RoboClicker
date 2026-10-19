@@ -1,4 +1,4 @@
-// Yandex Games SDK state
+﻿// Yandex Games SDK state
 let ysdk = null;
 let sdkReady = false;
 let player = null;
@@ -7,7 +7,14 @@ let gameLoadedNotified = false;
 let gameplayStarted = false;
 let isAdShowing = false;
 let isGamePaused = false;
+let externalPauseActive = false;
 let sdkInitPromise = null;
+let appReadyForLoadingNotification = false;
+let hasUserStartedGame = false;
+let gameSessionStartedAt = 0;
+const STARTUP_AD_GRACE_MS = 30000;
+const INTERSTITIAL_COOLDOWN_MS = 90000;
+let lastInterstitialAdAt = 0;
 let appHooks = {
 	onSDKReady: () => {},
 	onExternalPause: () => {},
@@ -51,7 +58,8 @@ function markGameplayStop() {
 }
 
 function notifyLoadingReady() {
-	if (gameLoadedNotified || !sdkReady) return;
+	if (gameLoadedNotified || !sdkReady || !appReadyForLoadingNotification) return;
+	if (document.body?.classList.contains('app-locale-pending')) return;
 	try {
 		ysdk?.features?.LoadingAPI?.ready?.();
 		gameLoadedNotified = true;
@@ -64,7 +72,6 @@ async function initSDK() {
 	if (sdkReady) return ysdk;
 	if (sdkInitPromise) return sdkInitPromise;
 	if (!window.YaGames || typeof window.YaGames.init !== 'function') {
-		console.info('[Robo Clicker] YaGames SDK not available, using local mode');
 		return null;
 	}
 
@@ -75,23 +82,21 @@ async function initSDK() {
 		const platformLang = ysdk?.environment?.i18n?.lang || 'ru';
 		safeCall('onPlatformLanguage', platformLang);
 
+		if (typeof ysdk.on === 'function') {
+			ysdk.on('game_api_pause', () => {
+				safeCall('onExternalPause');
+			});
+			ysdk.on('game_api_resume', () => {
+				safeCall('onExternalResume');
+			});
+		}
+
 		try {
-			player = await ysdk.getPlayer({ scopes: false });
+			player = await Promise.race([ysdk.getPlayer({ scopes: false }), new Promise(resolve => setTimeout(() => resolve(null), 1500))]);
 			isAuthorized = Boolean(player && (player.getMode?.() === 'real' || player.getUniqueID?.()));
 		} catch (_error) {
 			player = null;
 			isAuthorized = false;
-		}
-		if (typeof ysdk.on === 'function') {
-			ysdk.on('game_api_pause', () => {
-			isGamePaused = true;
-			markGameplayStop();
-			safeCall('onExternalPause');
-		});
-			ysdk.on('game_api_resume', () => {
-			isGamePaused = false;
-			safeCall('onExternalResume');
-		});
 		}
 
 		safeCall('onSDKReady', ysdk);
@@ -113,6 +118,7 @@ window.initSDK = initSDK;
 
 // Ждем загрузки всей страницы
 document.addEventListener('DOMContentLoaded', () => {
+	const startupLocalSeen = toInt(getStorageItem('lastSeenAt'));
 	const menuScreen = document.getElementById('menu'); // Ссылки на наши экраны
 	const aboutScreen = document.getElementById('about-modal');
 	const settingsScreen = document.getElementById('settings');
@@ -122,6 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const backBtn = document.getElementById('back-menu-btn'); // В меню
 	const rewardFreeBoostBtn = document.getElementById('reward-free-boost-btn');
 	const rewardRandomSkinBtn = document.getElementById('reward-random-skin-btn');
+	const rewardCoinsBonusBtn = document.getElementById('reward-coins-bonus-btn');
 
 	const aboutBtn = document.getElementById('about-btn'); // Об игре
 	const closeAbout = document.getElementById('close-about');
@@ -139,12 +146,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	const languageSelect = document.getElementById('language-select');
 	const LANGUAGE_KEY = 'language';
-	const LANGUAGE_USER_SELECTED_KEY = 'languageUserSelected';
 	const SUPPORTED_LANGUAGES = ['ru', 'en'];
 	let platformLanguage = null;
-	let currentLanguage = 'ru';;
+	let currentLanguage = 'ru';
 
 	const SCROLLABLE_UI_SELECTORS = [
+		'.menu',
+		'.menu-card',
 		'.about-card',
 		'.settings-card',
 		'.skins-content',
@@ -156,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	function syncAppViewportHeight() {
 		const viewportHeight = Math.max(
-			320,
+			220,
 			Math.round(window.visualViewport?.height || window.innerHeight || 0)
 		);
 		document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
@@ -225,6 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	// Русские значения сохранены как оригинальные формулировки проекта.
 	const TRANSLATIONS = {
 		ru: {
+			combo: 'Комбо', 'combo-effect': 'к награде клика (до ×4)',
 			gamename: 'Robo Clicker',
 			'about-title': ' — это космическое приключение!',
 			inginer: 'Ты — главный инженер секретной лаборатории будущего!',
@@ -242,9 +251,11 @@ document.addEventListener('DOMContentLoaded', () => {
 			'robot-info-default': '+1/сек • 0 куплено', 'skins-btn': 'Скины', 'boosts-btn': 'Бусты', 'achievements-btn': 'Достижения',
 			'stats-btn': 'Статистика', 'skins-title': 'СКИНЫ', 'boosts-title': 'БУСТЫ', 'active-boosts': 'Активные бусты',
 			'achievements-title': 'ДОСТИЖЕНИЯ', 'stats-title': 'СТАТИСТИКА', 'theme-dark': 'Темная', 'theme-light': 'Светлая', 'theme-auto': 'Авто',
-			'reward-free-boost': 'Посмотреть рекламу и получить бесплатный буст', 'reward-random-skin': 'Посмотреть рекламу и открыть случайный скин',
+			'reward-free-boost': 'Посмотреть рекламу и получить случайный буст', 'reward-random-skin': 'Посмотреть рекламу и открыть случайный скин',
+			'reward-coins-bonus': 'Посмотреть рекламу и получить монеты',
 		},
 		en: {
+			combo: 'Combo', 'combo-effect': 'to click reward (up to ×4)',
 			gamename: 'Robo Clicker',
 			'about-title': ' is a space adventure!',
 			inginer: 'You are the chief engineer of a secret laboratory of the future!',
@@ -262,7 +273,8 @@ document.addEventListener('DOMContentLoaded', () => {
 			'robot-info-default': '+1/sec • 0 bought', 'skins-btn': 'Skins', 'boosts-btn': 'Boosts', 'achievements-btn': 'Achievements',
 			'stats-btn': 'Statistics', 'skins-title': 'SKINS', 'boosts-title': 'BOOSTS', 'active-boosts': 'Active boosts',
 			'achievements-title': 'ACHIEVEMENTS', 'stats-title': 'STATISTICS', 'theme-dark': 'Dark', 'theme-light': 'Light', 'theme-auto': 'Auto',
-			'reward-free-boost': 'Watch ad and get a free boost', 'reward-random-skin': 'Watch ad and unlock a random skin',
+			'reward-free-boost': 'Watch ad and get a random boost', 'reward-random-skin': 'Watch ad and unlock a random skin',
+			'reward-coins-bonus': 'Watch ad and get coins',
 		}
 	};
 
@@ -272,10 +284,6 @@ document.addEventListener('DOMContentLoaded', () => {
 			.replace('_', '-')
 			.split('-')[0];
 		return SUPPORTED_LANGUAGES.includes(normalized) ? normalized : 'ru';
-	}
-
-	function isLanguageManuallySelected() {
-		return getStorageItem(LANGUAGE_USER_SELECTED_KEY) === '1';
 	}
 
 	function getFallbackLanguage() {
@@ -383,6 +391,11 @@ document.addEventListener('DOMContentLoaded', () => {
 			if (el) el.textContent = labels[currentLanguage] || labels.ru;
 		});
 
+		const comboIndicator = document.getElementById('combo-indicator');
+		if (comboIndicator) comboIndicator.title = currentLanguage === 'en'
+			? 'Fast clicks multiply the click reward'
+			: 'Быстрые клики умножают награду за клик';
+
 		const statsFieldLabels = [
 				{ ru: 'Монеты сейчас', en: 'Coins Now' },
 				{ ru: 'Всего заработано монет', en: 'Total Coins Earned' },
@@ -417,6 +430,18 @@ document.addEventListener('DOMContentLoaded', () => {
 	});
 
 	const ariaMap = {
+		'#click-object': { ru: 'Нажать на робота', en: 'Click the robot' },
+		'#language-select': { ru: 'Язык', en: 'Language' },
+		'#brightness-range': { ru: 'Яркость', en: 'Brightness' },
+		'.theme-select': { ru: 'Тема', en: 'Theme' },
+		'#close-settings': { ru: 'Закрыть настройки', en: 'Close settings' },
+		'#close-about': { ru: 'Закрыть описание', en: 'Close about' },
+		'#about-modal': { ru: 'Об игре', en: 'About game' },
+		'#settings': { ru: 'Настройки', en: 'Settings' },
+		'#skins-modal': { ru: 'Скины', en: 'Skins' },
+		'#boosts-modal': { ru: 'Бусты', en: 'Boosts' },
+		'#achievements-modal': { ru: 'Достижения', en: 'Achievements' },
+		'#stats-modal': { ru: 'Статистика', en: 'Statistics' },
 		'.game-stats-row': { ru: 'Игровая статистика', en: 'Game statistics' },
 		'.level-row': { ru: 'Уровень игрока', en: 'Player level' },
 		'#level-bar': { ru: 'Прогресс уровня', en: 'Level progress' },
@@ -448,6 +473,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 		if (rewardFreeBoostBtn) rewardFreeBoostBtn.textContent = t('reward-free-boost');
 		if (rewardRandomSkinBtn) rewardRandomSkinBtn.textContent = t('reward-random-skin');
+		if (rewardCoinsBonusBtn) rewardCoinsBonusBtn.textContent = t('reward-coins-bonus');
 		if (languageSelect) languageSelect.value = currentLanguage;
 
 		renderSkinsGrid();
@@ -458,13 +484,10 @@ document.addEventListener('DOMContentLoaded', () => {
 	}
 
 	function applyLanguage(language, options = {}) {
-		const { save = true, userSelected = false } = options;
+		const { save = true } = options;
 		currentLanguage = normalizeLanguage(language);
 		if (save) {
 			setStorageItem(LANGUAGE_KEY, currentLanguage);
-			if (userSelected) {
-				setStorageItem(LANGUAGE_USER_SELECTED_KEY, '1');
-			}
 		}
 		updateLocalizedUI();
 		if (save) saveGame();
@@ -546,6 +569,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const robotInfoEl = document.getElementById('robot-info');
 
 	let robotPrice = ROBOT_BASE_PRICE;
+	let robotIncomeRemainder = 0;
 	let robotCount = 0;
 	let robotIncomePerSecond = 0;
 	let lastSeenAt = Date.now();
@@ -635,6 +659,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	let pendingDiscount = false;
 	let boostTimeScale = 1;
 	let critBoostActive = false;
+	let boostClockPausedAt = null;
 
 	const boostCategories = [
 		{ id: 'temporary', label: { ru: 'Временные', en: 'Temporary' } },
@@ -727,7 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
   { id: 52, name: "Модный инженер", icon: "🎨", desc: "4 скина", type: "skins", goal: 4, reward: 1000, bonus: null, unlocked: false, claimed: false },
   { id: 53, name: "Коллекционер среднего уровня", icon: "🌟", desc: "8 скинов", type: "skins", goal: 8, reward: 3000, bonus: null, unlocked: false, claimed: false },
   { id: 54, name: "Редкий собиратель", icon: "🥷", desc: "12 скинов", type: "skins", goal: 12, reward: 7000, bonus: null, unlocked: false, claimed: false },
-  { id: 55, name: "Хромовый коллекционер", icon: "💎", desc: "Все 16 скинов", type: "skins", goal: 16, reward: 25000, bonus: "секретный скин", unlocked: false, claimed: false },
+  { id: 55, name: "Хромовый коллекционер", icon: "💎", desc: "Все 16 скинов", type: "skins", goal: 15, reward: 25000, bonus: "секретный скин", unlocked: false, claimed: false },
   { id: 56, name: "Галактический гардероб", icon: "🌌", desc: "10 разных скинов одновременно", type: "skinsEquipped", goal: 10, reward: 12000, bonus: null, unlocked: false, claimed: false },
   { id: 57, name: "Император стиля", icon: "👑", desc: "Все ультра-редкие скины", type: "skins", goal: 4, reward: 40000, bonus: null, unlocked: false, claimed: false },
   { id: 58, name: "Легенда моды", icon: "🏆", desc: "Купи 50 скинов", type: "skinsBought", goal: 50, reward: 18000, bonus: null, unlocked: false, claimed: false },
@@ -752,7 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
   { id: 75, name: "Легенда Robo Clicker", icon: "🏆", desc: "Все достижения кроме этого", type: "achievements", goal: 79, reward: 100000, bonus: null, unlocked: false, claimed: false },
   { id: 76, name: "Вечный двигатель", icon: "🔥", desc: "10 млн монет + 500 роботов", type: "totalCoins", goal: 10000000, reward: 40000, bonus: null, unlocked: false, claimed: false },
   { id: 77, name: "Эволюция завершена", icon: "🧬", desc: "Сила клика 500 + уровень 45", type: "clickPower", goal: 500, reward: 60000, bonus: null, unlocked: false, claimed: false },
-  { id: 78, name: "Звёздный инженер", icon: "🌠", desc: "Все скины + уровень 35", type: "skins", goal: 16, reward: 35000, bonus: null, unlocked: false, claimed: false },
+  { id: 78, name: "Звёздный инженер", icon: "🌠", desc: "Все скины + уровень 35", type: "skins", goal: 15, reward: 35000, bonus: null, unlocked: false, claimed: false },
   { id: 79, name: "Перегрузка системы", icon: "💥", desc: "5 млн кликов + 1000 роботов", type: "clicks", goal: 5000000, reward: 80000, bonus: null, unlocked: false, claimed: false },
   { id: 80, name: "Абсолютная легенда", icon: "🏆", desc: "500 млн монет + все выше", type: "totalCoins", goal: 500000000, reward: 200000, bonus: "секретный ультра-скин", unlocked: false, claimed: false }
 ];
@@ -935,6 +960,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	// Полный список ключей, которые относятся только к игре.
 	// В reset мы чистим только эти ключи, не затрагивая чужие данные в localStorage.
 	const GAME_STORAGE_KEYS = [
+		'robotIncomeRemainder',
 		'coins',
 		'clickPower',
 		CLICK_UPGRADE_PRICE_KEY,
@@ -967,11 +993,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
 	function toFiniteNumber(value, fallback = 0) {
 		const n = Number(value);
-		return Number.isFinite(n) ? n : fallback;
+		const safe = Number.isFinite(n) ? n : (Number.isFinite(fallback) ? fallback : 0);
+		return Math.max(-Number.MAX_SAFE_INTEGER, Math.min(Number.MAX_SAFE_INTEGER, safe));
 	}
 
 	function toInt(value) {
-		return Math.floor(Number(value) || 0);
+		return Math.floor(Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, toFiniteNumber(value, 0))));
 	}
 
 	function getStorageItem(key) {
@@ -984,6 +1011,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 		function setStorageItem(key, value) {
 			try {
+				if (localStorage.getItem(key) === String(value)) return;
 				localStorage.setItem(key, String(value));
 			} catch {
 				// localStorage может быть недоступен (privacy mode / quota / sandbox)
@@ -1044,10 +1072,11 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 
 		function checkSpecialAchievementCompletion(achievement) {
+			if (achievement.id === 57) return skins.filter(skin => skin.rarity === 'ultra').every(skin => ownedSkinIds.has(skin.id));
 			if (achievement.id === 75) return achievements.filter((item) => item.id !== 75 && item.unlocked).length >= 79;
 			if (achievement.id === 76) return totalCoinsEarned >= 10000000 && Math.max(0, robotCount - ACHIEVEMENT_BASE_ROBOTS) >= 500;
 			if (achievement.id === 77) return getEffectiveClickPower() >= 500 && level >= 45;
-			if (achievement.id === 78) return Math.max(0, ownedSkinIds.size - ACHIEVEMENT_BASE_SKINS) >= 16 && level >= 35;
+			if (achievement.id === 78) return Math.max(0, ownedSkinIds.size - ACHIEVEMENT_BASE_SKINS) >= skins.length - ACHIEVEMENT_BASE_SKINS && level >= 35;
 			if (achievement.id === 79) return totalClicks >= 5000000 && Math.max(0, robotCount - ACHIEVEMENT_BASE_ROBOTS) >= 1000;
 			if (achievement.id === 80) return totalCoinsEarned >= 500000000 && achievements.filter((item) => item.id < 80 && item.unlocked).length === 79;
 			return null;
@@ -1110,7 +1139,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			achievements.forEach((achievement) => {
 				const special = checkSpecialAchievementCompletion(achievement);
 				const isDone = special === null ? getAchievementProgressValue(achievement) >= achievement.goal : special;
-				achievement.unlocked = Boolean(isDone);
+				achievement.unlocked = achievement.unlocked || achievement.claimed || Boolean(isDone);
 			});
 
 			achievementSeries.forEach((series) => {
@@ -1131,6 +1160,7 @@ document.addEventListener('DOMContentLoaded', () => {
 			if (achievement.claimed) return;
 			achievement.claimed = true;
 			coins = toInt(coins + Math.max(0, toFiniteNumber(achievement.reward, 0)));
+			totalCoinsEarned = toInt(totalCoinsEarned + Math.max(0, toFiniteNumber(achievement.reward, 0)));
 			updatePermanentBonusesFromAchievements();
 		}
 
@@ -1296,7 +1326,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 		function openAchievementsModal() {
 			if (!achievementsModal) return;
-			closeAllFeatureModals();
+			closeAllFeatureModals({ skipAd: true });
 			unlockAchievementsButton();
 			markUnlockedAchievementsAsSeen();
 			renderAchievements();
@@ -1307,11 +1337,19 @@ document.addEventListener('DOMContentLoaded', () => {
 			saveGame();
 		}
 
-		function closeAchievementsModal() {
+		function closeAchievementsModal(options = {}) {
 			if (!achievementsModal) return;
+			if (achievementsModal.classList.contains('hidden')) return;
 			achievementsModal.classList.add('hidden');
-		syncBannerForScreen('game');
-		syncGameplayState();
+			if (options.skipAd) {
+				return;
+			}
+			showInterstitialAd({
+				onClose: () => {
+					syncBannerForScreen('game');
+					syncGameplayState();
+				},
+			});
 		}
 
 	// ТЕМА =========================
@@ -1348,27 +1386,40 @@ document.addEventListener('DOMContentLoaded', () => {
 		}
 	}
 
+	setAppHooks({
+		onPlatformLanguage: (lang) => {
+			if (!lang) return;
+			platformLanguage = normalizeLanguage(lang);
+			if (!getStorageItem('languageManuallySelected')) applyLanguage(platformLanguage, { save: true });
+		},
+		onExternalPause: () => { externalPauseActive = true; pauseGameplayContext(); },
+		onExternalResume: () => { externalPauseActive = false; resumeGameplayContext(); },
+		onSDKReady: () => {
+			restoreCloudSave();
+			notifyLoadingReady();
+			syncBannerForScreen('menu');
+			syncGameplayState();
+		},
+	});
 
 	if (languageSelect) {
 		languageSelect.addEventListener('change', () => {
-			applyLanguage(languageSelect.value || 'ru', { save: true, userSelected: true });
+			setStorageItem('languageManuallySelected', '1');
+			applyLanguage(languageSelect.value || 'ru', { save: true });
 		});
 	}
 
 	async function applyStartupLanguage() {
-		const savedLanguage = normalizeLanguage(getStorageItem(LANGUAGE_KEY));
-		const shouldUseManualLanguage = isLanguageManuallySelected();
 		const appRoot = document.getElementById('app-root');
 
 		try {
-			const sdkInstance = await initSDK();
+			const sdkInstance = await Promise.race([initSDK(), new Promise(resolve => setTimeout(() => resolve(null), 1500))]);
 			const sdkLanguage = normalizeLanguage(platformLanguage || sdkInstance?.environment?.i18n?.lang);
-			const startupLanguage = shouldUseManualLanguage
-				? savedLanguage
-				: (sdkInstance ? sdkLanguage : getFallbackLanguage());
-			applyLanguage(startupLanguage, { save: !shouldUseManualLanguage, userSelected: false });
+			const startupLanguage = getStorageItem('languageManuallySelected') ? getStorageItem(LANGUAGE_KEY) : (sdkInstance ? sdkLanguage : getFallbackLanguage());
+			applyLanguage(startupLanguage, { save: true });
 		} finally {
 			appRoot?.classList.remove('app-locale-pending');
+			notifyLoadingReady();
 		}
 	}
 
@@ -1421,9 +1472,9 @@ document.addEventListener('DOMContentLoaded', () => {
 	}
 
 	const sounds = {
-		click: createGameSound('sounds/click.wav', 'click.wav'),
-		start: createGameSound('sounds/start.wav', 'start.wav'),
-		menu: createGameSound('sounds/menu.wav', 'menu.wav'),
+		click: createGameSound('click.wav'),
+		start: createGameSound('start.wav'),
+		menu: createGameSound('menu.wav'),
 	};
 
 	function applyGlobalVolume(value) {
@@ -1439,6 +1490,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	}
 
 	function playSound(name) {
+		if (isGamePaused || isAdShowing) return;
 		const audio = sounds[name];
 		if (!audio || globalVolume <= 0) return;
 
@@ -1565,7 +1617,9 @@ async function showSafeBanner() {
 function hideSafeBanner() {
 	if (!sdkReady || !ysdk?.adv?.hideBannerAdv) return;
 	try {
-		ysdk.adv.hideBannerAdv();
+			Promise.resolve(ysdk.adv.hideBannerAdv()).catch(error => {
+				console.warn('[Robo Clicker] hideBannerAdv failed', error);
+			});
 	} catch (error) {
 		console.warn('[Robo Clicker] hideBannerAdv failed', error);
 	}
@@ -1574,15 +1628,31 @@ function hideSafeBanner() {
 function syncBannerForScreen(screenName) {
 	if (!sdkReady || isAdShowing) return;
 
+	if (!hasUserStartedGame || screenName === 'menu') {
+		hideSafeBanner();
+		return;
+	}
+
 	// Баннер показываем только там, где он действительно нужен
-	if (['boosts', 'skins'].includes(screenName)) {
+	if (['game', 'boosts', 'skins', 'achievements', 'stats'].includes(screenName)) {
 		void showSafeBanner();
 	} else {
 		hideSafeBanner();
 	}
 }
 
+function getVisibleFeatureScreenName() {
+	if (document.querySelector('#boosts-modal:not(.hidden)')) return 'boosts';
+	if (document.querySelector('#skins-modal:not(.hidden)')) return 'skins';
+	if (document.querySelector('#achievements-modal:not(.hidden)')) return 'achievements';
+	if (document.querySelector('#stats-modal:not(.hidden)')) return 'stats';
+	if (document.querySelector('#settings:not(.hidden)')) return 'settings';
+	if (document.querySelector('#menu:not(.hidden)')) return 'menu';
+	return 'game';
+}
+
 function pauseGameplayContext(options = {}) {
+	if (isGamePaused) return;
 	const wasGameplayActive = !isGamePaused && isMainGameplayActive();
 
 	adPauseState = {
@@ -1591,18 +1661,21 @@ function pauseGameplayContext(options = {}) {
 	};
 
 	isGamePaused = true;
+	pauseActiveBoostTimers();
 	pauseAllSounds?.();
 	stopRobotIncomeTimer?.();
 	markGameplayStop();
 }
 
 function resumeGameplayContext() {
-	const shouldResumeGameplay = adPauseState?.wasGameplayActive === true;
+	if (isAdShowing || externalPauseActive || document.hidden) return;
+	const shouldResumeGameplay = getEffectiveRobotIncome() > 0;
 
 	adPauseState = null;
 	isGamePaused = false;
+	resumeActiveBoostTimers();
 
-	if (shouldResumeGameplay && robotIncomePerSecond > 0) {
+	if (shouldResumeGameplay) {
 		startRobotIncomeTimer?.();
 	}
 
@@ -1610,6 +1683,18 @@ function resumeGameplayContext() {
 }
 
 function showInterstitialAd(options = {}) {
+	const gameSessionAgeMs = Date.now() - gameSessionStartedAt;
+	if (!hasUserStartedGame || gameSessionAgeMs < STARTUP_AD_GRACE_MS) {
+		options.onClose?.(false);
+		return;
+	}
+
+	const now = Date.now();
+	if (now - lastInterstitialAdAt < INTERSTITIAL_COOLDOWN_MS) {
+		options.onClose?.(false);
+		return;
+	}
+
 	// Убрали спорную задержку 450 мс.
 	// Оставляем только защиту от показа сразу после игрового клика.
 	const minClickToAdDelayMs = 280;
@@ -1628,23 +1713,35 @@ function showInterstitialAd(options = {}) {
 	isAdShowing = true;
 	pauseGameplayContext({ reason: 'interstitial' });
 
+	let finished = false;
+	let opened = false;
 	try {
 		ysdk.adv.showFullscreenAdv({
 			callbacks: {
 				onOpen: () => {
+					if (finished || opened) return;
+					opened = true;
+					lastInterstitialAdAt = Date.now();
 					options.onOpen?.();
 				},
 				onClose: (wasShown) => {
+					if (finished) return;
+					finished = true;
 					isAdShowing = false;
 					resumeGameplayContext();
 					options.onClose?.(Boolean(wasShown));
 				},
 				onError: (error) => {
+					if (finished) return;
+					finished = true;
 					isAdShowing = false;
 					resumeGameplayContext();
 					options.onError?.(error);
+					options.onClose?.(false);
 				},
 				onOffline: () => {
+					if (finished) return;
+					finished = true;
 					isAdShowing = false;
 					resumeGameplayContext();
 					options.onOffline?.();
@@ -1652,6 +1749,8 @@ function showInterstitialAd(options = {}) {
 			},
 		});
 	} catch (error) {
+		if (finished) return;
+		finished = true;
 		console.warn('[Robo Clicker] showFullscreenAdv failed', error);
 		isAdShowing = false;
 		resumeGameplayContext();
@@ -1662,14 +1761,9 @@ function showInterstitialAd(options = {}) {
 
 	function grantRewardByType(rewardType) {
 		if (rewardType === 'boost_free') {
-			const available = boosts.filter((boost) => canBuyBoost(boost));
-			const targetBoost = available[Math.floor(Math.random() * available.length)] || boosts[0];
-			if (targetBoost) {
-				applyBoostEffect(targetBoost);
-				targetBoost.purchases = toInt(targetBoost.purchases + 1);
-				boostLevels[targetBoost.id] = toInt(targetBoost.purchases);
-				boostUsageCount[targetBoost.id] = toInt(boostUsageCount[targetBoost.id]) + 1;
-			}
+			const available = boosts.filter((boost) => canGrantRewardBoost(boost));
+			const targetBoost = available[Math.floor(Math.random() * available.length)] || null;
+			if (targetBoost) grantBoostForReward(targetBoost);
 		}
 		if (rewardType === 'skin_random') {
 			const availableSkins = skins.filter((skin) => !ownedSkinIds.has(skin.id));
@@ -1678,6 +1772,7 @@ function showInterstitialAd(options = {}) {
 				ownedSkinIds.add(randomSkin.id);
 				selectedSkinId = randomSkin.id;
 				skinsBoughtCount += 1;
+				updateClickObjectSkin();
 			}
 		}
 		if (rewardType === 'coins_bonus') {
@@ -1686,20 +1781,30 @@ function showInterstitialAd(options = {}) {
 			totalCoinsEarned = toInt(totalCoinsEarned + rewardCoins);
 		}
 		updateUI();
+		renderBoostsUI();
+		renderSkinsGrid();
 		saveGame();
 	}
 
 function showRewardedAd(rewardType) {
-	if (!sdkReady || !ysdk?.adv?.showRewardedVideo || isAdShowing) return;
+	if (!sdkReady || !ysdk?.adv?.showRewardedVideo || isAdShowing) {
+		return;
+	}
 
 	isAdShowing = true;
+	hideSafeBanner();
 	pauseGameplayContext({ reason: `reward:${rewardType}` });
 
+	let finished = false;
+	let rewarded = false;
 	try {
 		ysdk.adv.showRewardedVideo({
 			callbacks: {
-				onOpen: () => {},
+				onOpen: () => {
+				},
 				onRewarded: () => {
+					if (finished || rewarded) return;
+					rewarded = true;
 					grantRewardByType(rewardType);
 					updateUI?.();
 					renderBoostsUI?.();
@@ -1707,20 +1812,29 @@ function showRewardedAd(rewardType) {
 					saveGame?.();
 				},
 				onClose: () => {
+					if (finished) return;
+					finished = true;
 					isAdShowing = false;
 					resumeGameplayContext();
+					syncBannerForScreen(getVisibleFeatureScreenName());
 				},
 				onError: (error) => {
+					if (finished) return;
+					finished = true;
 					console.warn('[Robo Clicker] showRewardedVideo failed', error);
 					isAdShowing = false;
 					resumeGameplayContext();
+					syncBannerForScreen(getVisibleFeatureScreenName());
 				},
 			},
 		});
 	} catch (error) {
+		if (finished) return;
+		finished = true;
 		console.warn('[Robo Clicker] showRewardedVideo failed', error);
 		isAdShowing = false;
 		resumeGameplayContext();
+		syncBannerForScreen(getVisibleFeatureScreenName());
 	}
 }
 
@@ -1766,19 +1880,6 @@ function showRewardedAd(rewardType) {
 		});
 	}
 
-	setAppHooks({
-		onPlatformLanguage: (lang) => {
-			if (!lang) return;
-			platformLanguage = normalizeLanguage(lang);
-		},
-		onExternalPause: pauseGameplayContext,
-		onExternalResume: resumeGameplayContext,
-		onSDKReady: () => {
-			notifyLoadingReady();
-			syncGameplayState();
-		},
-	});
-
 	if (rewardFreeBoostBtn) {
 		rewardFreeBoostBtn.addEventListener('click', () => showRewardedAd('boost_free'));
 	}
@@ -1787,9 +1888,15 @@ function showRewardedAd(rewardType) {
 		rewardRandomSkinBtn.addEventListener('click', () => showRewardedAd('skin_random'));
 	}
 
+	if (rewardCoinsBonusBtn) {
+		rewardCoinsBonusBtn.addEventListener('click', () => showRewardedAd('coins_bonus'));
+	}
+
 	// Game Start
 	function startGame() {
 		if (!menuScreen) return;
+		hasUserStartedGame = true;
+		gameSessionStartedAt = Date.now();
 		menuScreen.classList.add('hidden');
 		syncBannerForScreen('game');
 		syncGameplayState();
@@ -1800,6 +1907,8 @@ function showRewardedAd(rewardType) {
 		saveGame();
 		if (!menuScreen) return;
 		menuScreen.classList.remove('hidden');
+		hideBonusDrone();
+		resetCombo();
 		markGameplayStop();
 		syncBannerForScreen('menu');
 	}
@@ -1829,8 +1938,12 @@ function showRewardedAd(rewardType) {
 	if (closeAbout && aboutScreen) {
 		closeAbout.onclick = () => {
 			aboutScreen.classList.add('hidden'); // крестик об игре
-		syncBannerForScreen('menu');
-		syncGameplayState();
+			showInterstitialAd({
+				onClose: () => {
+					syncBannerForScreen('menu');
+					syncGameplayState();
+				},
+			});
 		};
 	}
 
@@ -1854,8 +1967,12 @@ function showRewardedAd(rewardType) {
 	if (closeSetting && settingsScreen) {
 		closeSetting.onclick = () => {
 			settingsScreen.classList.add('hidden'); // Закрыть настройки
-			syncBannerForScreen('menu');
-			syncGameplayState();
+			showInterstitialAd({
+				onClose: () => {
+					syncBannerForScreen('menu');
+					syncGameplayState();
+				},
+			});
 		};
 	}
 
@@ -1877,6 +1994,8 @@ function getRarityLabel(rarity) {
 		if (!clickObject) return;
 		const currentSkin = skinById.get(selectedSkinId) || skinById.get(DEFAULT_SKIN_ID);
 		clickObject.textContent = currentSkin ? currentSkin.icon : '🤖';
+		const scene = clickObject.closest('.game-arena');
+		if (scene) scene.dataset.skin = String(currentSkin?.id || DEFAULT_SKIN_ID);
 	}
 
 	function getSkinButtonState(skin) {
@@ -1952,18 +2071,26 @@ function getRarityLabel(rarity) {
 
 	function openSkinsModal() {
 		if (!skinsModal) return;
-		closeAllFeatureModals();
+		closeAllFeatureModals({ skipAd: true });
 		renderSkinsGrid();
 		skinsModal.classList.remove('hidden');
 		markGameplayStop();
 		syncBannerForScreen('skins');
 	}
 
-	function closeSkinsModal() {
+	function closeSkinsModal(options = {}) {
 		if (!skinsModal) return;
+		if (skinsModal.classList.contains('hidden')) return;
 		skinsModal.classList.add('hidden');
-		syncBannerForScreen('game');
-		syncGameplayState();
+		if (options.skipAd) {
+			return;
+		}
+		showInterstitialAd({
+			onClose: () => {
+				syncBannerForScreen('game');
+				syncGameplayState();
+			},
+		});
 	}
 
 	if (skinsBtn) {
@@ -2047,29 +2174,37 @@ function getRarityLabel(rarity) {
 			});
 		}
 
-	function closeAllFeatureModals() {
+	function closeAllFeatureModals(options = {}) {
 		const hadOpenModal = Boolean(document.querySelector('#skins-modal:not(.hidden), #boosts-modal:not(.hidden), #achievements-modal:not(.hidden), #stats-modal:not(.hidden)'));
-		closeSkinsModal();
-		closeBoostsModal();
-		closeAchievementsModal();
-		closeStatsModal();
+		closeSkinsModal(options);
+		closeBoostsModal(options);
+		closeAchievementsModal(options);
+		closeStatsModal(options);
 		return hadOpenModal;
 	}
 
 	function openStatsModal() {
 		if (!statsModal) return;
-		closeAllFeatureModals();
+		closeAllFeatureModals({ skipAd: true });
 		renderStatistics();
 		statsModal.classList.remove('hidden');
 		markGameplayStop();
 		syncBannerForScreen('stats');
 	}
 
-	function closeStatsModal() {
+	function closeStatsModal(options = {}) {
 		if (!statsModal) return;
+		if (statsModal.classList.contains('hidden')) return;
 		statsModal.classList.add('hidden');
-		syncBannerForScreen('game');
-		syncGameplayState();
+		if (options.skipAd) {
+			return;
+		}
+		showInterstitialAd({
+			onClose: () => {
+				syncBannerForScreen('game');
+				syncGameplayState();
+			},
+		});
 	}
 
 	if (statsBtn) {
@@ -2106,7 +2241,7 @@ function getRarityLabel(rarity) {
 	function getActiveBoostsCount() {
 		// Считаем только бусты, которые реально активны на текущий момент,
 		// чтобы статистика не показывала уже истёкшие записи.
-		const now = Date.now();
+		const now = getGameplayClockNow();
 		return Object.values(activeBoosts).reduce((count, boostData) => {
 			return count + (toFiniteNumber(boostData?.endAt, 0) > now ? 1 : 0);
 		}, 0);
@@ -2123,7 +2258,7 @@ function getRarityLabel(rarity) {
 		const levelRequiredClicks = requiredClicksForLevel(level);
 		const safeLevelClicks = Math.max(0, Math.floor(toFiniteNumber(levelClicks, 0)));
 		const levelRemainingClicks = Math.max(0, levelRequiredClicks - safeLevelClicks);
-		const unlockedAchievementsCount = achievementSeries.filter((item) => item.fullyCompleted === true).length;
+		const unlockedAchievementsCount = achievements.filter((item) => item.unlocked === true).length;
 		const claimedAchievementsCount = achievements.filter((item) => item.claimed === true).length;
 
 		if (statsEls.coinsCurrent) statsEls.coinsCurrent.textContent = String(Math.floor(toFiniteNumber(coins, 0)));
@@ -2167,15 +2302,19 @@ function getRarityLabel(rarity) {
 		return Math.max(1, toInt(boost.currentPrice));
 	}
 
+	function getGameplayClockNow() {
+		return boostClockPausedAt === null ? Date.now() : boostClockPausedAt;
+	}
+
 	function isBoostActive(boostId) {
 		const boost = boostById.get(boostId);
 		if (!boost) return false;
-		return !!(boost.active && boost.expiresAt && Date.now() < boost.expiresAt);
+		return !!(boost.active && boost.expiresAt && getGameplayClockNow() < boost.expiresAt);
 	}
 
 	function refreshBoostState(boost) {
 		if (!boost) return;
-		if (boost.active && boost.expiresAt && Date.now() >= boost.expiresAt) {
+		if (boost.active && boost.expiresAt && getGameplayClockNow() >= boost.expiresAt) {
 			boost.active = false;
 			boost.expiresAt = null;
 		}
@@ -2241,13 +2380,13 @@ function getRarityLabel(rarity) {
 			return coinsPerClick;
 		}
 
-		function getEffectiveRobotIncome() {
+		function getEffectiveRobotIncome(at = getGameplayClockNow()) {
 			let income = robotIncomePerSecond;
 			income += getPassiveBoostTotalEffect('eternal_generator', 0);
 			const droneBoost = boostById.get('drone_army');
-			if (isBoostActive('drone_army') && droneBoost) income *= toFiniteNumber(droneBoost.currentEffect, 1);
+			if (droneBoost?.active && at < droneBoost.expiresAt) income *= toFiniteNumber(droneBoost.currentEffect, 1);
 			const galacticBoost = boostById.get('galactic_breakthrough');
-			if (isBoostActive('galactic_breakthrough') && galacticBoost) income *= toFiniteNumber(galacticBoost.currentRobotEffect, 1);
+			if (galacticBoost?.active && at < galacticBoost.expiresAt) income *= toFiniteNumber(galacticBoost.currentRobotEffect, 1);
 			if (getBoostLevel('space_amplifier') > 0) income *= 1.1;
 			income *= permanentRobotBonusMultiplier;
 			return income;
@@ -2280,6 +2419,39 @@ function getRarityLabel(rarity) {
 		renderBoostsUI();
 	}
 
+	function pauseActiveBoostTimers() {
+		if (boostClockPausedAt === null) {
+			boostClockPausedAt = Date.now();
+		}
+		boostTimers.forEach((timer) => clearTimeout(timer));
+		boostTimers.clear();
+	}
+
+	function resumeActiveBoostTimers() {
+		if (boostClockPausedAt === null) return;
+		const resumeAt = Date.now();
+
+		Object.entries(activeBoosts).forEach(([id, data]) => {
+			const boost = boostById.get(id);
+			const startedAt = toFiniteNumber(data.startAt, boostClockPausedAt);
+			const pausedFrom = Math.max(boostClockPausedAt, startedAt);
+			const pausedMs = Math.max(0, resumeAt - pausedFrom);
+
+			if (pausedMs > 0) {
+				data.endAt = toFiniteNumber(data.endAt, resumeAt) + pausedMs;
+				if (boost && boost.expiresAt) {
+					boost.expiresAt = toInt(toFiniteNumber(boost.expiresAt, resumeAt) + pausedMs);
+				}
+			}
+			scheduleBoostTimer(id);
+		});
+
+		lastBoostTick = resumeAt;
+		boostClockPausedAt = null;
+		updateBoostDerivedState();
+		renderBoostsUI();
+	}
+
 	function deactivateBoost(boostId) {
 		delete activeBoosts[boostId];
 		const timer = boostTimers.get(boostId);
@@ -2299,6 +2471,8 @@ function getRarityLabel(rarity) {
 		if (!active) return;
 		const existing = boostTimers.get(boostId);
 		if (existing) clearTimeout(existing);
+		boostTimers.delete(boostId);
+		if (isGamePaused || isAdShowing) return;
 		const msLeft = Math.max(0, active.endAt - Date.now());
 		const timeoutId = setTimeout(() => {
 			deactivateBoost(boostId);
@@ -2336,6 +2510,10 @@ function getRarityLabel(rarity) {
 
 		function renderActiveBoosts() {
 			const now = Date.now();
+			if (isGamePaused || isAdShowing) {
+				lastBoostTick = now;
+				return;
+			}
 			const delta = Math.max(0, (now - lastBoostTick) / 1000);
 			const freezeBoost = boostById.get('time_freeze');
 			if (freezeBoost && isBoostActive('time_freeze')) {
@@ -2413,7 +2591,7 @@ function getRarityLabel(rarity) {
 		filtered.forEach((boost) => {
 				refreshBoostState(boost);
 				const action = getBoostActionState(boost);
-				const remainingSeconds = boost.expiresAt ? Math.max(0, Math.ceil((boost.expiresAt - Date.now()) / 1000)) : 0;
+				const remainingSeconds = boost.expiresAt ? Math.max(0, Math.ceil((boost.expiresAt - getGameplayClockNow()) / 1000)) : 0;
 				const card = document.createElement('article');
 				card.className = `boost-card boost-card--${boost.rarity === 'epic' ? 'epic' : boost.rarity === 'rare' ? 'rare' : 'common'}`;
 				if (isBoostActive(boost.id)) card.classList.add('boost-card--active');
@@ -2469,18 +2647,26 @@ function getRarityLabel(rarity) {
 
 	function openBoostsModal() {
 		if (!boostsModal) return;
-		closeAllFeatureModals();
+		closeAllFeatureModals({ skipAd: true });
 		renderBoostsUI();
 		boostsModal.classList.remove('hidden');
 		markGameplayStop();
 		syncBannerForScreen('boosts');
 	}
 
-	function closeBoostsModal() {
+	function closeBoostsModal(options = {}) {
 		if (!boostsModal) return;
+		if (boostsModal.classList.contains('hidden')) return;
 		boostsModal.classList.add('hidden');
-		syncBannerForScreen('game');
-		syncGameplayState();
+		if (options.skipAd) {
+			return;
+		}
+		showInterstitialAd({
+			onClose: () => {
+				syncBannerForScreen('game');
+				syncGameplayState();
+			},
+		});
 	}
 
 	function getOfflineBonusReward() {
@@ -2563,6 +2749,28 @@ function getRarityLabel(rarity) {
 		return true;
 	}
 
+	function canGrantRewardBoost(boost) {
+		if (!boost) return false;
+		refreshBoostState(boost);
+		if (boost.oneTime && (boost.consumed || toInt(boost.purchases) > 0)) return false;
+		if (boost.duration > 0 && isBoostActive(boost.id)) return false;
+		return true;
+	}
+
+	function grantBoostForReward(boost) {
+		if (!boost || !canGrantRewardBoost(boost)) return false;
+		boostTypesUsed.add(boost.category);
+		applyBoostEffect(boost);
+		boost.purchases = toInt(boost.purchases + 1);
+		boost.currentPrice = Math.max(1, toInt(boost.currentPrice * toFiniteNumber(boost.priceMultiplier, 1.2)));
+		recalculateBoostEffect(boost);
+		boostLevels[boost.id] = toInt(boost.purchases);
+		boostUsageCount[boost.id] = toInt(boostUsageCount[boost.id]) + 1;
+		startRobotIncomeTimer();
+		updateBoostDerivedState();
+		return true;
+	}
+
 	function buyBoost(boostId) {
 		const boost = boostById.get(boostId);
 		if (!boost || !canBuyBoost(boost)) return;
@@ -2575,6 +2783,7 @@ function getRarityLabel(rarity) {
 		recalculateBoostEffect(boost);
 		boostLevels[boost.id] = toInt(boost.purchases);
 		boostUsageCount[boost.id] = toInt(boostUsageCount[boost.id]) + 1;
+		startRobotIncomeTimer();
 		updateBoostDerivedState();
 		updateUI();
 		renderBoostsUI();
@@ -2753,10 +2962,10 @@ if (boostsBtn) {
 		// Закрываем все модалки и приводим экран к состоянию меню.
 		if (aboutScreen) aboutScreen.classList.add('hidden');
 		if (settingsScreen) settingsScreen.classList.add('hidden');
-		closeSkinsModal();
-		closeBoostsModal();
-		closeAchievementsModal();
-		closeStatsModal();
+		closeSkinsModal({ skipAd: true });
+		closeBoostsModal({ skipAd: true });
+		closeAchievementsModal({ skipAd: true });
+		closeStatsModal({ skipAd: true });
 		if (menuScreen) menuScreen.classList.remove('hidden');
 
 		// Удаляем временные «всплывающие» числа от прошлой сессии.
@@ -2795,6 +3004,7 @@ if (boostsBtn) {
 	}
 
 	function applyGameState(state) {
+		robotIncomeRemainder = Math.min(0.999999, Math.max(0, toFiniteNumber(state.robotIncomeRemainder, 0)));
 		coins = toInt(state.coins);
 		clickPower = state.clickPower;
 		upgradePrice = state.upgradePrice;
@@ -2835,11 +3045,13 @@ if (boostsBtn) {
 			const saved = savedBoosts.find((item) => item && item.id === boost.id) || null;
 			const legacyLevel = Math.max(0, toInt(boostLevels[boost.id]));
 			boost.purchases = Math.max(0, toInt(saved?.purchases ?? legacyLevel));
+			boostLevels[boost.id] = boost.purchases;
 			boost.currentPrice = Math.max(1, toInt(saved?.currentPrice ?? (boost.basePrice * Math.pow(boost.priceMultiplier, boost.purchases))));
-			boost.currentEffect = toFiniteNumber(saved?.currentEffect, boost.baseEffect + (boost.effectStep || 0) * boost.purchases);
-			if (boost.type === 'passive') {
+			boost.currentEffect = Math.max(0, toFiniteNumber(saved?.currentEffect, boost.baseEffect + (boost.effectStep || 0) * boost.purchases));
+			if (boost.type === 'passive' && !boost.oneTime) {
 				boost.currentEffect = Math.round(getPassiveBoostTotalEffect(boost.id, 0) * 100) / 100;
 			}
+			if (boost.oneTime) boost.currentEffect = boost.baseEffect;
 			if (boost.id === 'galactic_breakthrough') {
 				boost.currentRobotEffect = toFiniteNumber(saved?.currentRobotEffect, boost.baseRobotEffect + (boost.robotEffectStep || 0) * boost.purchases);
 			}
@@ -2858,7 +3070,7 @@ if (boostsBtn) {
 		delete activeBoosts.rocket_pulse;
 
 		if (Array.isArray(state.achievementsState)) {
-			const byId = new Map(state.achievementsState.map((it) => [Number(it.id), it]));
+			const byId = new Map(state.achievementsState.filter(it => it && typeof it === 'object').map((it) => [Number(it.id), it]));
 			achievements.forEach((achievement) => {
 				const saved = byId.get(achievement.id);
 				if (!saved) return;
@@ -2866,7 +3078,7 @@ if (boostsBtn) {
 				achievement.claimed = Boolean(saved.claimed);
 			});
 		} else if (state.achievementsState && typeof state.achievementsState === 'object' && Array.isArray(state.achievementsState.series)) {
-			const bySeries = new Map(state.achievementsState.series.map((item) => [String(item.id), item]));
+			const bySeries = new Map(state.achievementsState.series.filter(item => item && typeof item === 'object').map((item) => [String(item.id), item]));
 			achievementSeries.forEach((series) => {
 				const savedSeries = bySeries.get(series.id);
 				if (!savedSeries || !Array.isArray(savedSeries.claimedStepIds)) return;
@@ -2878,12 +3090,21 @@ if (boostsBtn) {
 				});
 			});
 		}
+		if (Array.isArray(state.achievementsState?.legacy)) {
+			state.achievementsState.legacy.forEach(saved => {
+				const achievement = achievements.find(item => item.id === saved?.id);
+				if (achievement) achievement.unlocked = achievement.unlocked || saved.unlocked === true || achievement.claimed;
+			});
+		}
 		updateAchievementsState();
 		updatePermanentBonusesFromAchievements();
 		restoreAchievementsButtonState();
 	}
 
 	function resetGameProgress() {
+		resetCombo();
+		hideBonusDrone();
+		droneRemaining = 30000 + Math.random() * 30000;
 		const initialState = createInitialGameState();
 		stopAllTransientProcesses();
 		clearGameStorage();
@@ -2980,6 +3201,16 @@ if (boostsBtn) {
 		};
 
 		resetProgressBtn.addEventListener('mousedown', onPressStart);
+		resetProgressBtn.addEventListener('keydown', event => {
+			if (!['Enter', ' '].includes(event.key)) return;
+			event.preventDefault();
+			if (event.repeat) return;
+			if (!resetArmed) armResetButton(); else onPressStart(event);
+		});
+		resetProgressBtn.addEventListener('keyup', event => {
+			if (['Enter', ' '].includes(event.key)) { event.preventDefault(); onPressCancel(); }
+		});
+		resetProgressBtn.addEventListener('blur', onPressCancel);
 		resetProgressBtn.addEventListener('touchstart', onPressStart, { passive: true });
 		resetProgressBtn.addEventListener('mouseup', onPressCancel);
 		resetProgressBtn.addEventListener('mouseleave', onPressCancel);
@@ -3025,11 +3256,13 @@ if (boostsBtn) {
 
 	//---------------КЛИКЕР-------------------------------------
 	function startRobotIncomeTimer() {
-		if (robotTimer || robotIncomePerSecond <= 0) return;
+		if (robotTimer || getEffectiveRobotIncome() <= 0) return;
 
 		robotTimer = setInterval(() => {
 			if (isGamePaused || isAdShowing) return;
-			const robotIncome = toInt(getEffectiveRobotIncome());
+			const accrued = Math.max(0, getEffectiveRobotIncome()) + robotIncomeRemainder;
+			const robotIncome = toInt(accrued);
+			robotIncomeRemainder = accrued - robotIncome;
 			coins = toInt(coins + robotIncome);
 			totalCoinsEarned = toInt(totalCoinsEarned + robotIncome);
 			updateUI();
@@ -3060,31 +3293,74 @@ if (boostsBtn) {
 
 
 	let cloudSyncTimer = null;
+	let cloudLoading = false;
+	async function restoreCloudSave() {
+		if (!player?.getData || cloudLoading) return;
+		cloudLoading = true;
+		const localSeen = startupLocalSeen;
+		try {
+			const data = await Promise.race([player.getData(), new Promise(resolve => setTimeout(() => resolve(null), 1500))]);
+			if (!data || hasUserStartedGame || toFiniteNumber(data.updatedAt, 0) <= localSeen) return;
+			if (data.storage && typeof data.storage === 'object' && !Array.isArray(data.storage)) {
+				GAME_STORAGE_KEYS.forEach(key => {
+					if (typeof data.storage[key] === 'string') setStorageItem(key, data.storage[key]);
+				});
+			} else {
+				setStorageItem('coins', toInt(data.coins));
+				setStorageItem('clickPower', Math.max(1, toFiniteNumber(data.clickPower, 1)));
+				setStorageItem(LEVEL_KEY, toInt(data.level));
+				setStorageItem(LAST_SEEN_AT_KEY, toInt(data.updatedAt));
+			}
+			loadGame();
+			updateClickObjectSkin();
+			updateUI();
+			startRobotIncomeTimer();
+			saveGame();
+		} catch (error) {
+			console.warn('[Robo Clicker] Cloud load skipped', error);
+		} finally { cloudLoading = false; }
+	}
+	function calculateStoredOfflineReward(lastSeen, now) {
+		const end = lastSeen + Math.min(7200, Math.max(0, Math.floor((now - lastSeen) / 1000))) * 1000;
+		if (end <= lastSeen) return 0;
+		const relevant = ['drone_army', 'galactic_breakthrough', 'offline_accelerator'].map(id => boostById.get(id));
+		const boundaries = [lastSeen, end, ...relevant.filter(boost => boost?.active && boost.expiresAt > lastSeen && boost.expiresAt < end).map(boost => boost.expiresAt)].sort((a, b) => a - b);
+		let reward = 0;
+		const accelerator = boostById.get('offline_accelerator');
+		for (let i = 0; i < boundaries.length - 1; i++) {
+			const start = boundaries[i];
+			const multiplier = accelerator?.active && start < accelerator.expiresAt ? accelerator.currentEffect : 1;
+			reward += getEffectiveRobotIncome(start) * ((boundaries[i + 1] - start) / 1000) * multiplier;
+		}
+		return toInt(reward);
+	}
 	function scheduleCloudSync() {
-		if (!sdkReady || !isAuthorized || !player?.setData) return;
-		if (cloudSyncTimer) clearTimeout(cloudSyncTimer);
+		if (!sdkReady || !player?.setData || cloudLoading || cloudSyncTimer) return;
 		cloudSyncTimer = setTimeout(() => {
+			cloudSyncTimer = null;
 			const payload = {
+				storage: Object.fromEntries(GAME_STORAGE_KEYS.map(key => [key, getStorageItem(key)])),
 				coins: Math.max(0, toInt(coins)),
 				clickPower: Math.max(1, toFiniteNumber(clickPower, 1)),
 				level: Math.max(0, Math.floor(toFiniteNumber(level, 0))),
 				updatedAt: Date.now(),
 			};
-			player.setData(payload).catch((error) => {
+			Promise.resolve().then(() => player.setData(payload)).catch((error) => {
 				console.warn('[Robo Clicker] Cloud sync skipped', error);
 			});
-		}, 800);
+		}, 3500);
 	}
 
 	// Сохраняем данные в localStorage
 	function saveGame() {
+		setStorageItem('robotIncomeRemainder', robotIncomeRemainder);
 		setStorageItem('coins', Math.max(0, toInt(coins)));
 		setStorageItem('clickPower', Math.max(1, toFiniteNumber(clickPower, 1)));
 		setStorageItem(CLICK_UPGRADE_PRICE_KEY, Math.max(1, toFiniteNumber(upgradePrice, 85)));
 		setStorageItem(ROBOT_PRICE_KEY, Math.max(ROBOT_BASE_PRICE, toFiniteNumber(robotPrice, ROBOT_BASE_PRICE)));
 		setStorageItem(ROBOT_COUNT_KEY, Math.max(0, Math.floor(toFiniteNumber(robotCount, 0))));
 		setStorageItem(ROBOT_INCOME_KEY, Math.max(0, Math.floor(toFiniteNumber(robotIncomePerSecond, 0))));
-		setStorageItem(LAST_SEEN_AT_KEY, toInt(Date.now()));
+		setStorageItem(LAST_SEEN_AT_KEY, Math.floor(Date.now() / 1000) * 1000);
 		setStorageItem(BRIGHTNESS_KEY, clamp(brightness, BR_MIN, BR_MAX));
 		setStorageItem(VOLUME_KEY, clamp01(globalVolume));
 		setStorageItem(LEVEL_KEY, Math.max(0, Math.floor(toFiniteNumber(level, 0))));
@@ -3160,6 +3436,7 @@ if (boostsBtn) {
 		const savedSeenUnlockedAchievements = getStorageItem(ACHIEVEMENTS_SEEN_UNLOCKED_KEY);
 		const savedAchievementsState = getStorageItem(ACHIEVEMENTS_STATE_KEY);
 
+		loadedState.robotIncomeRemainder = getStorageItem('robotIncomeRemainder');
 		if (savedCoins !== null) loadedState.coins = Math.max(0, toInt(savedCoins));
 		if (savedClickPower !== null) loadedState.clickPower = Math.max(1, toFiniteNumber(savedClickPower, initialState.clickPower));
 		if (savedUpgradePrice !== null) loadedState.upgradePrice = Math.max(1, toFiniteNumber(savedUpgradePrice, initialState.upgradePrice));
@@ -3270,7 +3547,7 @@ if (boostsBtn) {
 		});
 		const now = Date.now();
 		const offlineBoost = boostById.get('offline_accelerator');
-		const offlineReward = calculateOfflineReward(lastSeenAt, now, Math.max(0, getEffectiveRobotIncome()), offlineBoost);
+		const offlineReward = calculateStoredOfflineReward(lastSeenAt, now);
 		if (offlineReward > 0) {
 			coins = toInt(coins + offlineReward);
 			totalCoinsEarned = toInt(totalCoinsEarned + offlineReward);
@@ -3290,12 +3567,104 @@ if (boostsBtn) {
 	}
 
 	// Клик по роботу
+	let comboMultiplier = 1;
+	let comboHits = 0;
+	let comboLastClick = -Infinity;
+	let comboTimer = null;
+	const COMBO_STAGES = [
+		{ hits: 1, multiplier: 1 },
+		{ hits: 3, multiplier: 1.25 },
+		{ hits: 6, multiplier: 1.5 },
+		{ hits: 10, multiplier: 2 },
+		{ hits: 15, multiplier: 3 },
+		{ hits: 25, multiplier: 4 },
+	];
+	const comboValue = document.getElementById('combo-value');
+	const bonusDrone = document.getElementById('bonus-drone');
+	let droneRemaining = 30000 + Math.random() * 30000;
+	let droneLife = 0;
+	let activityTick = performance.now();
+	function resetCombo() {
+		clearTimeout(comboTimer);
+		comboMultiplier = 1;
+		comboHits = 0;
+		comboLastClick = -Infinity;
+		comboValue.textContent = '×1';
+		comboValue.parentElement.classList.remove('combo-active');
+	}
+	function getComboMultiplier() {
+		const value = Number(comboMultiplier);
+		return Number.isFinite(value) ? Math.min(4, Math.max(1, Math.round(value * 100) / 100)) : 1;
+	}
+	function getComboMultiplierForHits(hits) {
+		const safeHits = Math.max(0, Math.floor(toFiniteNumber(hits, 0)));
+		return COMBO_STAGES.reduce((multiplier, stage) => safeHits >= stage.hits ? stage.multiplier : multiplier, 1);
+	}
+	function getComboCoinsPerClick() {
+		return Math.max(0, toFiniteNumber(getEffectiveCoinsPerClick(), 0)) * getComboMultiplier();
+	}
+	function advanceCombo() {
+		const now = performance.now();
+		comboHits = now - comboLastClick < 1500 ? comboHits + 1 : 1;
+		comboMultiplier = getComboMultiplierForHits(comboHits);
+		comboLastClick = now;
+		comboValue.textContent = `×${getComboMultiplier()}`;
+		comboValue.parentElement.classList.toggle('combo-active', getComboMultiplier() > 1);
+		clearTimeout(comboTimer);
+		comboTimer = setTimeout(resetCombo, 1500);
+	}
+	function hideBonusDrone() {
+		bonusDrone.hidden = true;
+		droneLife = 0;
+	}
+	bonusDrone.addEventListener('click', () => {
+		if (bonusDrone.hidden || !isMainGameplayActive() || isGamePaused || isAdShowing) return;
+		hideBonusDrone();
+		coins = toInt(coins + 100);
+		totalCoinsEarned = toInt(totalCoinsEarned + 100);
+		showBoostActivation(currentLanguage === 'en' ? 'BONUS! +100' : 'БОНУС! +100');
+		updateUI();
+		saveGame();
+	});
+	setInterval(() => {
+		const now = performance.now();
+		const delta = now - activityTick;
+		activityTick = now;
+		bonusDrone.setAttribute('aria-label', currentLanguage === 'en' ? 'Bonus drone +100' : 'Бонусный дрон +100');
+		if (!isMainGameplayActive() || document.hidden || isGamePaused || isAdShowing) {
+			hideBonusDrone();
+			resetCombo();
+			return;
+		}
+		if (!bonusDrone.hidden) {
+			droneLife -= delta;
+			if (droneLife <= 0) hideBonusDrone();
+		} else {
+			droneRemaining -= delta;
+			if (droneRemaining <= 0) {
+				bonusDrone.hidden = false;
+				droneLife = 5000;
+				droneRemaining = 30000 + Math.random() * 30000;
+			}
+		}
+	}, 100);
 	if (clickObject) {
+		clickObject.setAttribute('role', 'button');
+		clickObject.tabIndex = 0;
+		clickObject.addEventListener('keydown', event => {
+			if (!['Enter', ' '].includes(event.key)) return;
+			event.preventDefault();
+			if (event.repeat) return;
+			const box = clickObject.getBoundingClientRect();
+			clickObject.dispatchEvent(new PointerEvent('pointerdown', { clientX: box.x + box.width / 2, clientY: box.y + box.height / 2 }));
+		});
 		clickObject.addEventListener('pointerdown', (e) => {
+			if (isGamePaused || isAdShowing || !isMainGameplayActive() || (e.button != null && e.button > 0)) return;
 			e.preventDefault();
+			advanceCombo();
 			lastRobotClickAt = Date.now();
 			playSound('click');
-			let gainedCoins = getEffectiveCoinsPerClick();
+			let gainedCoins = getComboCoinsPerClick();
 			if (pendingSuperClick) {
 				gainedCoins *= 25;
 				pendingSuperClick = false;
@@ -3328,6 +3697,36 @@ if (boostsBtn) {
 	}
 
 	bindGenericButtonSound();
+	const modalOpeners = new Map();
+	const modalSelector = '.menu:not(#menu)';
+	document.querySelectorAll(modalSelector).forEach(modal => {
+		modal.setAttribute('role', 'dialog');
+		modal.setAttribute('aria-modal', 'true');
+		let visible = !modal.classList.contains('hidden');
+		new MutationObserver(() => {
+			const next = !modal.classList.contains('hidden');
+			if (next === visible) return;
+			visible = next;
+			if (next) {
+				modalOpeners.set(modal, document.activeElement);
+				modal.querySelector('button:not([disabled]), select, input')?.focus();
+			} else {
+				modalOpeners.get(modal)?.focus();
+			}
+		}).observe(modal, { attributes: true, attributeFilter: ['class'] });
+	});
+	document.addEventListener('keydown', event => {
+		const modal = document.querySelector('.menu:not(#menu):not(.hidden)');
+		if (!modal) return;
+		if (event.key === 'Escape') { event.preventDefault(); modal.querySelector('.close-btn')?.click(); }
+		if (event.key === 'Tab') {
+			const items = [...modal.querySelectorAll('button:not([disabled]), select, input, [tabindex="0"]')].filter(el => el.getClientRects().length);
+			if (!items.length) return;
+			event.preventDefault();
+			const index = items.indexOf(document.activeElement);
+			items[(index + (event.shiftKey ? -1 : 1) + items.length) % items.length].focus();
+		}
+	});
 	initResetProgressButton();
 	initVolumeControl();
 	syncAppViewportHeight();
@@ -3343,7 +3742,7 @@ if (boostsBtn) {
 	}, 250);
 	updateClickObjectSkin();
 	renderSkinsGrid();
-	if (robotIncomePerSecond > 0) {
+	if (getEffectiveRobotIncome() > 0) {
 		startRobotIncomeTimer();
 	} else {
 		stopRobotIncomeTimer();
@@ -3355,23 +3754,24 @@ if (boostsBtn) {
 		themeValue: getStorageItem(THEME_KEY) || DEFAULT_THEME,
 		save: false,
 	});
+	appReadyForLoadingNotification = true;
 	notifyLoadingReady();
 	initTvControls();
 	// Сохранение при перезагрузке/закрытии и при уходе со страницы
 	window.addEventListener('beforeunload', saveGame);
 	document.addEventListener('visibilitychange', () => {
 		if (document.visibilityState === 'hidden') {
-			pauseAllSounds();
-			markGameplayStop();
+			pauseGameplayContext({ reason: 'visibility' });
 			saveGame();
 		} else {
-			syncGameplayState();
+			resumeGameplayContext();
 		}
 	});
 	window.addEventListener('blur', () => {
 		pauseAllSounds();
 		markGameplayStop();
 	});
+	window.addEventListener('focus', syncGameplayState);
 
 	// "вылет" числа в точке клика (рисуем внутри #game)
 	function createFloatingNumber(clientX, clientY, value) {
@@ -3499,3 +3899,5 @@ if (boostsBtn) {
 		autoBotBtn.addEventListener('click', buyAutoBot);
 	}
 });
+
+document.addEventListener("contextmenu", e => e.preventDefault(), false);

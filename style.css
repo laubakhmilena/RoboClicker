@@ -39,7 +39,7 @@ body{
 	height:var(--app-height, 100svh);
 	min-height:var(--app-height, 100svh);
 	color:var(--text);
-	font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+	font-family: "Arial", sans-serif;
 	user-select:none;
 	-webkit-user-select:none;
 	touch-action:manipulation;
@@ -57,9 +57,26 @@ body.app-locale-pending{
 	visibility:hidden;
 }
 
+#combo-indicator {
+	display:flex;
+	align-items:center;
+	justify-content:center;
+	gap:4px;
+	font-size:12px;
+	line-height:20px;
+	color:var(--accent);
+	transition:color .15s, transform .15s;
+}
+#combo-indicator strong { font-weight:900; }
+#combo-indicator.combo-active { color:#ffd35b; transform:scale(1.06); }
+#bonus-drone { position:absolute; right:8px; top:calc(50% + 14px); transform:translateY(-50%); width:44px; height:44px; padding:0; border:2px solid #ffdc75; border-radius:50%; background:#795312; color:#ffe099; font-size:28px; box-shadow:0 0 12px #eeb94070; cursor:pointer; z-index:2; }
+#bonus-drone[hidden] { display:none; }
 button,
 [role="button"],
 #click-object{
+	border:0;
+	background:transparent;
+	box-shadow:none;
 	-webkit-tap-highlight-color: transparent;
 	user-select: none;
 	-webkit-user-select: none;
@@ -105,7 +122,11 @@ button:focus-visible,
 	align-items:center;
 	max-height:100%;
 	min-height:var(--app-height, 100svh);
-	overflow:hidden;
+	overflow-x:hidden;
+	overflow-y:auto;
+	overscroll-behavior:contain;
+	-webkit-overflow-scrolling:touch;
+	touch-action:pan-y;
 }
 
 #game{
@@ -118,8 +139,10 @@ button:focus-visible,
 	display:flex;
 	flex-direction:column;
 	align-items:center;
-	justify-content:center;
-	overflow:hidden;     /* prevent important UI from leaving viewport */
+	justify-content:flex-start;
+	overflow:hidden;
+	overscroll-behavior:none;
+	touch-action:none;
 	background: linear-gradient(135deg, var(--bg1), var(--bg2));
 }
 
@@ -128,12 +151,15 @@ button:focus-visible,
    ========================================================= */
 .menu-frame{
 	position:relative;
+	width:100%;
 	height:95%;
 	max-height:95%;
 	overflow:hidden;
 
 	display:flex;
 	align-items:center;
+	justify-content:center;
+	min-height:0;
 }
 
 .menu-card{
@@ -142,18 +168,21 @@ button:focus-visible,
 	border:1px solid var(--glass);
 	border-radius:var(--radius);
 
-	padding:40px;
+	width:min(360px, 100%);
+	padding:clamp(20px, 6vw, 40px);
 	text-align:center;
 	max-width:360px;
 	box-shadow:var(--shadow);
 
-	overflow:hidden;
+	overflow-y:auto;
+	overflow-x:hidden;
 	max-height:none;
 }
 
 #menu .menu-card{
 	max-height:calc(var(--app-height, 100svh) - 40px);
-	overflow:hidden;
+	overflow-y:auto;
+	overflow-x:hidden;
 }
 
 .menu-card::-webkit-scrollbar{ display:none; }
@@ -165,7 +194,7 @@ button:focus-visible,
 	touch-action:pan-y;}
 
 .menu-title{
-	font-size:36px;
+	font-size:clamp(26px, 13vw, 36px);
 	margin:0;
 
 	background: linear-gradient(90deg, var(--accent), var(--accent2));
@@ -176,6 +205,9 @@ button:focus-visible,
 	text-transform:uppercase;
 	font-weight:900;
 	text-align:center;
+	line-height:1.18;
+	overflow-wrap:anywhere;
+	word-break:normal;
 
 	color:#00d4ff; /* fallback */
 	text-shadow:0 0 10px rgba(0,212,255,0.5);
@@ -198,6 +230,7 @@ button:focus-visible,
 .menu-sub{
 	color:var(--muted);
 	margin-bottom:20px;
+	overflow-wrap:anywhere;
 }
 
 .menu-content{
@@ -214,7 +247,14 @@ button:focus-visible,
 	gap:6px;
 }
 
-.menu-btn{ cursor:pointer; }
+.menu-btn{
+	cursor:pointer;
+	max-width:100%;
+	white-space:normal;
+	overflow-wrap:anywhere;
+	word-break:normal;
+	text-align:center;
+}
 .menu-btn:disabled{ cursor:not-allowed; }
 
 .primary-btn{
@@ -224,6 +264,7 @@ button:focus-visible,
 	padding:12px 18px;
 	border-radius:14px;
 	font-weight:800;
+	line-height:1.2;
 	box-shadow:0 10px 24px rgba(255,100,140,0.08);
 	transition: transform .2s ease, box-shadow .2s ease;
 }
@@ -234,7 +275,9 @@ button:focus-visible,
 
 .secondary-btn{
 	margin-top:6px;
-	width:48%;
+	flex:1 1 120px;
+	width:auto;
+	min-width:0;
 	padding:9px 10px;
 	border-radius:12px;
 	border:1px solid rgba(255,255,255,0.06);
@@ -249,6 +292,87 @@ button:focus-visible,
 .secondary-btn:hover{
 	transform:scale(1.02);
 	box-shadow:0 14px 34px rgba(70,78,92,0.34);
+}
+
+@media (orientation: landscape) and (max-height: 420px){
+	.menu{
+		padding:8px 10px;
+		align-items:center;
+	}
+	.menu-frame{
+		width:100%;
+		height:100%;
+		max-height:100%;
+		overflow:visible;
+		align-items:center;
+		justify-content:center;
+	}
+	#menu .menu-card{
+		max-height:calc(var(--app-height, 100svh) - 16px);
+	}
+	.menu-card{
+		padding:14px 18px;
+		max-width:min(360px, 68vw);
+	}
+	.menu-title{
+		font-size:clamp(24px, 6.5vh, 34px);
+		line-height:1.08;
+		margin-bottom:8px;
+	}
+	.menu-sub{
+		margin:0 0 10px;
+		font-size:14px;
+		line-height:1.2;
+	}
+	.menu-content{
+		margin-bottom:4px;
+	}
+	.primary-btn{
+		padding:9px 16px;
+		font-size:14px;
+	}
+	.secondary-btn{
+		padding:7px 10px;
+		font-size:13px;
+	}
+}
+
+@media (orientation: landscape) and (max-height: 320px){
+	.menu{
+		align-items:flex-start;
+	}
+	.menu-frame{
+		height:auto;
+		max-height:none;
+		align-items:flex-start;
+	}
+	.menu-card{
+		padding:10px 14px;
+		max-width:min(340px, 78vw);
+	}
+	.menu-title{
+		font-size:clamp(21px, 8vh, 30px);
+		margin-bottom:6px;
+	}
+	.menu-sub{
+		font-size:13px;
+		margin-bottom:8px;
+	}
+	.primary-btn,
+	.secondary-btn{
+		padding-top:6px;
+		padding-bottom:6px;
+		font-size:12px;
+	}
+}
+
+@media (orientation: landscape) and (max-height: 260px){
+	#menu .menu-card{
+		max-height:calc(var(--app-height, 100svh) - 12px);
+	}
+	.menu-sub{
+		display:none;
+	}
 }
 
 /* =========================================================
@@ -532,6 +656,7 @@ button:focus-visible,
 	color: rgba(255,255,255,0.88);
 	padding-left:8px;
 	white-space:nowrap;
+	min-width:max-content;
 }
 
 .upgrade-btn:disabled,
@@ -566,7 +691,9 @@ button:focus-visible,
    8) GAME — ARENA (Robot)
    ========================================================= */
 #game main{
-	flex-grow:1;
+	gap:6px;
+	flex:1 1 0;
+	min-height:0;
 	display:flex;
 	flex-direction:column;
 	align-items:center;
@@ -741,12 +868,18 @@ button:focus-visible,
 	z-index:2000;
 }
 
+.settings-modal .menu-frame{
+	justify-content:center;
+	width:100%;
+}
+
 .settings-card{
 	background:var(--card);
 	border:1px solid var(--glass);
 	border-radius:var(--radius);
 	box-shadow:var(--shadow);
 	padding:30px 40px;
+	width:min(420px, 100%);
 	max-width:420px;
 	max-height:calc(var(--app-height, 100svh) - 24px);
 	overflow-y:auto;
@@ -1085,6 +1218,26 @@ body.light_theme .primary-btn{
    13) RESPONSIVE — MOBILE
    ========================================================= */
 @media (max-width: 520px){
+	.menu{ padding:12px; }
+	.menu-frame{
+		width:100%;
+		max-height:100%;
+	}
+	.menu-card{
+		width:min(100%, 360px);
+		padding:clamp(18px, 7vw, 28px);
+	}
+	.menu-title{
+		font-size:clamp(24px, 12vw, 34px);
+	}
+	.menu-extra{
+		justify-content:center;
+	}
+	.secondary-btn{
+		flex:1 1 100%;
+		width:100%;
+	}
+
 	#game{ padding:18px 12px; }
 
 	.game-stats-row{ gap:6px; }
@@ -1121,6 +1274,18 @@ body.light_theme .primary-btn{
 	}
 
 	#click-object{ font-size: clamp(72px, 24vw, 92px); }
+}
+
+@media (max-width: 320px){
+	.menu{ padding:10px; }
+	.menu-card{ padding:18px 14px; }
+	.menu-title{ font-size:clamp(22px, 11vw, 30px); }
+	.primary-btn,
+	.secondary-btn{
+		padding-left:10px;
+		padding-right:10px;
+		font-size:13px;
+	}
 }
 
 @media (max-height: 760px){
@@ -1181,19 +1346,25 @@ body.light_theme .primary-btn{
 @media (max-width: 420px){
 	.settings-card{
 		padding:22px 18px;
+		width:min(92vw, 420px);
 		max-width:92vw;
 	}
 
 	.settings-list{
 		grid-template-columns:1fr;
 		gap:10px;
+		width:min(100%, 170px);
+		margin:0 auto 0 56px;
+	}
+
+	.settings-list li{
+		justify-content:flex-start;
+		text-align:left;
 		width:100%;
 	}
 
-	.settings-list li{ width:100%; }
-
 	.settings-list li:nth-child(even){
-		justify-content:start;
+		justify-content:flex-start;
 		width:100%;
 		white-space:nowrap;
 	}
@@ -1203,7 +1374,7 @@ body.light_theme .primary-btn{
    14) RESPONSIVE — LANDSCAPE GRID
    Требование: блок улучшений (shop-panel) слева по середине от робота
    ========================================================= */
-@media (orientation: landscape) and (min-width: 680px){
+@media (orientation: landscape) and (min-width: 1024px) and (min-height: 560px){
 	#game{
 		display:grid;
 		grid-template-columns: minmax(180px, 260px) minmax(220px, 600px) minmax(180px, 260px);
@@ -1211,6 +1382,7 @@ body.light_theme .primary-btn{
 		column-gap:16px;
 		row-gap:8px;
 		align-items:start;
+		justify-content:center;
 	}
 
 	#game header.game-topbar{
@@ -1232,12 +1404,12 @@ body.light_theme .primary-btn{
 		justify-self: center;
 		align-self: center;
 
-			max-width:230px;
+			max-width:270px;
 		}
 
 		.shop-panel .game-upgrades{
 			grid-template-columns: 1fr; /* in landscape: stack buttons */
-			max-width: 210px;
+			max-width: 250px;
 		}
 
 	/* Robot — center column */
@@ -1259,6 +1431,8 @@ body.light_theme .primary-btn{
 	#game{
 		grid-template-rows:auto auto 1fr auto;
 		row-gap:5px;
+		padding-top:8px;
+		padding-bottom:8px;
 	}
 	.stat-badge{
 		min-height:34px;
@@ -1275,8 +1449,18 @@ body.light_theme .primary-btn{
 		padding-bottom:4px;
 	}
 	.shop-panel .game-upgrades{ gap:5px; }
-	.feature-panel{ gap:5px; }
-	#click-object{ font-size: clamp(44px, 10vw, 72px); }
+	.feature-panel{
+		gap:5px;
+		max-width:min(100%, 420px);
+	}
+	.feature-btn{
+		min-height:48px;
+		padding:5px 4px;
+		gap:3px;
+		border-radius:14px;
+	}
+	.feature-btn__text{ font-size:10px; }
+	#click-object{ font-size: clamp(42px, 14vmin, 72px); }
 	#back-menu-btn{
 		max-width:360px;
 		min-height:34px;
@@ -1332,13 +1516,13 @@ body.light_theme .primary-btn{
 }
 
 .feature-btn__text{
-	font-size:13px;
+	font-size:clamp(10px, 3.2vw, 13px);
 	font-weight:900;
 	line-height:1.15;
 	text-align:center;
 
 	white-space:normal;
-	word-break:keep-all;
+	word-break:normal;
 	overflow-wrap:normal;
 	hyphens:none;
 }
@@ -1400,7 +1584,41 @@ body.light_theme .primary-btn{
 	}
 }
 
-@media (orientation: landscape) and (min-width: 680px){
+@media (max-width: 380px){
+	#game{
+		padding-left:10px;
+		padding-right:10px;
+	}
+	.feature-panel{
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		max-width:260px;
+		gap:8px;
+	}
+	.feature-btn{
+		min-height:56px;
+		padding:6px 5px;
+		gap:3px;
+		border-radius:16px;
+	}
+	.feature-btn__icon{ font-size:13px; }
+	.feature-btn__text{ font-size:10px; }
+	.shop-panel{ max-width:100%; }
+	.upgrade-btn{
+		grid-template-columns: 18px minmax(0, 1fr);
+		column-gap:6px;
+		padding:7px 8px;
+	}
+	.upgrade-btn .price{
+		grid-column: 2;
+		justify-self:start;
+		padding-left:0;
+	}
+	.upgrade-btn__title{ font-size:12px; }
+	.upgrade-btn__subtitle{ font-size:10px; }
+	.upgrade-btn .price{ font-size:11px; }
+}
+
+@media (orientation: landscape) and (min-width: 1024px) and (min-height: 560px){
 	.feature-panel{
 		grid-column: 3;
 		grid-row: 3;
@@ -2357,7 +2575,8 @@ body.light_theme .primary-btn{
 }
 
 .boosts-card .ad-safe-zone,
-.skins-card .ad-safe-zone{
+.skins-card .ad-safe-zone,
+.stats-card .ad-safe-zone{
 	position:sticky;
 	bottom:0;
 	z-index:3;
@@ -2368,7 +2587,8 @@ body.light_theme .primary-btn{
 }
 
 .boosts-card .ad-safe-zone .secondary-btn,
-.skins-card .ad-safe-zone .secondary-btn{
+.skins-card .ad-safe-zone .secondary-btn,
+.stats-card .ad-safe-zone .secondary-btn{
 	width:min(100%, 260px);
 	max-width:260px;
 	font-size:11px;
@@ -2397,7 +2617,10 @@ body.light_theme .primary-btn{
 
 @media (max-width: 640px){
 	#game{
-		padding:clamp(8px, 2vh, 14px) clamp(8px, 2.5vw, 12px);
+		padding:
+			clamp(8px, 2vh, 14px)
+			clamp(8px, 2.5vw, 12px)
+			calc(clamp(8px, 2vh, 14px) + env(safe-area-inset-bottom, 0px));
 	}
 	.game-stats-row{ gap:6px; }
 	.stat-badge{ min-height:44px; height:44px; padding:6px 8px; }
@@ -2405,4 +2628,143 @@ body.light_theme .primary-btn{
 	.stat-badge__value{ font-size:clamp(11px, 3vw, 13px); }
 	.level-row{ margin-bottom:6px; }
 	.secondary-btn{ font-size:13px; }
+}
+
+body.light_theme #click-object,
+body.auto #click-object{
+	border:0;
+	background:transparent;
+	box-shadow:none;
+	color:inherit;
+}
+
+body.light_theme .ad-safe-zone .secondary-btn,
+body.auto .ad-safe-zone .secondary-btn{
+	background:linear-gradient(135deg, #dbeafe, #b9e4eb);
+	border-color:#6f8fbd;
+	color:#10233f;
+	box-shadow:0 8px 18px rgba(44,67,105,0.22);
+}
+
+body.light_theme .ad-safe-zone .secondary-btn:hover,
+body.auto .ad-safe-zone .secondary-btn:hover{
+	background:linear-gradient(135deg, #c9ddfb, #a9d8e2);
+	color:#0b1b35;
+}
+
+@media (orientation: landscape) and (max-height: 360px){
+	#game{
+		padding:6px 8px;
+	}
+
+	#game header.game-topbar{
+		margin-bottom:4px;
+	}
+
+	.game-stats-row{
+		gap:5px;
+	}
+
+	.stat-badge{
+		height:30px;
+		min-height:30px;
+		padding:3px 7px;
+	}
+
+	.stat-badge__label{
+		font-size:10px;
+	}
+
+	.stat-badge__value{
+		font-size:10px;
+	}
+
+	.level-row{
+		margin-bottom:4px;
+	}
+
+	.level-bar{
+		height:10px;
+		min-height:10px;
+	}
+
+	.shop-panel{
+		margin-top:4px;
+		padding:5px;
+	}
+
+	.shop-panel__title{
+		display:none;
+	}
+
+	.game-upgrades{
+		gap:5px;
+	}
+
+	.upgrade-btn{
+		min-height:34px;
+		padding:4px 6px;
+		grid-template-columns:16px 1fr auto;
+		column-gap:5px;
+		border-radius:12px;
+	}
+
+	.upgrade-btn__icon{
+		font-size:12px;
+	}
+
+	.upgrade-btn__title,
+	.upgrade-btn .price{
+		font-size:10px;
+	}
+
+	.upgrade-btn__subtitle{
+		display:none;
+	}
+
+	.feature-panel{
+		margin-top:5px;
+		gap:5px;
+	}
+
+	.feature-btn{
+		min-height:38px;
+		padding:4px 3px;
+		gap:2px;
+		border-radius:12px;
+	}
+
+	.feature-btn__icon{
+		font-size:12px;
+	}
+
+	.feature-btn__text{
+		font-size:9px;
+		line-height:1.05;
+	}
+
+	#click-object{
+		font-size:clamp(42px, 12vw, 58px);
+	}
+
+	#back-menu-btn{
+		min-height:28px;
+		padding:5px 10px;
+		font-size:10px;
+	}
+}
+
+/* Accessible controls keep their touch area at compact sizes. */
+.menu button, .menu select, .menu input, #back-menu-btn { min-height:44px; }
+.menu .close-btn { min-width:44px; min-height:44px; }
+@media (orientation:landscape) and (max-height:430px) and (min-width:641px) {
+ #game { display:grid; grid-template-columns:minmax(0,1fr) minmax(160px,1fr) minmax(0,1fr); grid-template-rows:44px 20px minmax(0,1fr) 44px; gap:6px 14px; padding:8px 14px; }
+ #game .game-topbar { grid-column:1 / -1; grid-row:1; margin:0; justify-self:center; }
+ #game .level-row { grid-column:1 / -1; grid-row:2; margin:0; justify-self:center; }
+ #game .shop-panel { grid-column:1; grid-row:3; align-self:center; margin:0; width:100%; }
+ #game .game-upgrades { grid-template-columns:1fr; }
+ #game .feature-panel { grid-column:3; grid-row:3; align-self:center; grid-template-columns:repeat(2,minmax(0,1fr)); margin:0; }
+ #game .game-arena { grid-column:2; grid-row:3; align-self:stretch; }
+ #game .game-shop { grid-column:1 / -1; grid-row:4; margin:0; }
+ #game #back-menu-btn { min-height:44px; }
 }

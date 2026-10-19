@@ -5,7 +5,10 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 	<title>Robo Clicker</title>
-	<link rel="stylesheet" href="style.css" /> </head>
+	<link rel="icon" href="data:," />
+	<link rel="stylesheet" href="style.css" />
+	<link rel="stylesheet" href="scene.css" />
+</head>
 
 <body id="app-root" class="app-locale-pending">
 	<!-- Об игре-->
@@ -52,8 +55,8 @@
 							<li data-lang="language">🌍 Язык</li>
 							<li>
 								<select id="language-select">
-									<option class="opt-btn active" value="ru">RU</option>
-									<option class="opt-btn" value="en">EN</option>
+									<option class="opt-btn active" value="ru">Русский</option>
+									<option class="opt-btn" value="en">English</option>
 								</select>
 							</li>
 							<li data-lang="sound">🔊 Звук</li>
@@ -126,11 +129,18 @@
 		<div class="feature-panel" aria-label="Игровые разделы">
 			<button id="btn-skins" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">👕</span> <span class="feature-btn__text" data-lang="skins-btn">Скины</span> </button>
 			<button id="btn-boosts" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">🚀</span> <span class="feature-btn__text" data-lang="boosts-btn">Бусты</span> </button>
-			<button id="btn-achievements" class="feature-btn locked" type="button"> <span class="feature-btn__icon" aria-hidden="true">🏆</span> <span class="feature-btn__text" data-lang="achievements-btn">Достижения</span> </button>
+			<button id="btn-achievements" class="feature-btn locked" type="button" style="overflow: hidden;"> <span class="feature-btn__icon" aria-hidden="true">🏆</span> <span class="feature-btn__text" data-lang="achievements-btn">Достижения</span> </button>
 			<button id="btn-stats" class="feature-btn" type="button"> <span class="feature-btn__icon" aria-hidden="true">📊</span> <span class="feature-btn__text" data-lang="stats-btn">Статистика</span> </button>
 		</div>
 		<main class="game-arena">
+			<div id="combo-indicator" title="Награда за быстрый клик умножается" aria-live="polite">
+				<span data-lang="combo">Комбо</span>
+				<strong id="combo-value">×1</strong>
+				<span data-lang="combo-effect">к награде клика (до ×4)</span>
+			</div>
+			<button id="bonus-drone" type="button" hidden aria-label="Бонусный дрон +100">🛸</button>
 			<div id="click-object">🤖</div>
+			<div class="scene-platform" aria-hidden="true"><span></span></div>
 		</main>
 		<aside class="game-shop">
 			<button id="back-menu-btn" class="exit-btn" data-lang="back-menu-btn">В меню</button>
@@ -167,7 +177,7 @@
 					<div id="boosts-grid" aria-label="Список бустов"></div>
 				</main>
 				<div class="ad-safe-zone">
-					<button id="reward-free-boost-btn" class="menu-btn secondary-btn" type="button">Посмотреть рекламу и получить бесплатный буст</button>
+					<button id="reward-free-boost-btn" class="menu-btn secondary-btn" type="button">Посмотреть рекламу и получить случайный буст</button>
 				</div>
 				<button id="close-boosts" class="close-btn" type="button" aria-label="Закрыть окно бустов">✕</button>
 			</div>
@@ -253,12 +263,23 @@
 						</div>
 					</section>
 				</main>
+				<div class="ad-safe-zone">
+					<button id="reward-coins-bonus-btn" class="menu-btn secondary-btn" type="button">Посмотреть рекламу и получить монеты</button>
+				</div>
 				<button id="close-stats" class="close-btn" type="button" aria-label="Закрыть окно статистики">✕</button>
 			</div>
 		</div>
 	</section>
 	<script src="script.js"></script>
-	<script src="/sdk.js"></script>
+	<script>
+		if (location.protocol !== 'file:' && !['localhost', '127.0.0.1', '[::1]'].includes(location.hostname)) {
+			const sdkScript = document.createElement('script');
+			sdkScript.src = '/sdk.js';
+			sdkScript.async = true;
+			sdkScript.onload = () => window.initSDK();
+			document.head.appendChild(sdkScript);
+		}
+	</script>
 </body>
 
 </html>
