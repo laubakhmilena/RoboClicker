@@ -2,11 +2,11 @@
 
 ## Комментарий разработчика (RU)
 
-В Robo Clicker появилось больше поводов возвращаться в игру: активное Combo теперь растёт по ступеням до ×4 и заметно усиливает быстрые клики, а редкий бонусный дрон приносит +100 золота. Мы обновили игровую сцену в неоновом стиле, добавили светящуюся платформу и всплывающие награды, связали окружение с выбранным скином и улучшили адаптацию интерфейса для вертикальных и горизонтальных экранов. Также проверены сохранения, перезапуск, реклама и переключение RU/EN.
+В Robo Clicker появилось больше поводов возвращаться в игру: активное Combo теперь растёт по ступеням до ×4 и заметно усиливает быстрые клики, а редкий бонусный дрон приносит +100 золота. Я обновила игровую сцену в неоновом стиле, добавила светящуюся платформу и всплывающие награды, связала окружение с выбранным скином и улучшила адаптацию интерфейса для вертикальных и горизонтальных экранов. Также проверены сохранения, перезапуск, реклама и переключение RU/EN.
 
 ## Developer update (EN)
 
-Robo Clicker now gives you more reasons to come back: the active Combo builds through stages up to ×4 and makes fast clicks much more rewarding, while a rare bonus drone grants +100 gold. We refreshed the neon game scene with a glowing platform and floating rewards, made the environment react to the selected skin, and improved the layout for portrait and landscape screens. Saves, reloads, ads, and RU/EN language switching were checked as well.
+Robo Clicker now gives you more reasons to come back: the active Combo builds through stages up to ×4 and makes fast clicks much more rewarding, while a rare bonus drone grants +100 gold. I refreshed the neon game scene with a glowing platform and floating rewards, made the environment react to the selected skin, and improved the layout for portrait and landscape screens. Saves, reloads, ads, and RU/EN language switching were checked as well.
 
 ## Краткое описание игры (RU)
 
